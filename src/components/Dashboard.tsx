@@ -4,7 +4,7 @@ import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, Hourglass } from 'lucide-react';
-import { format, isPast, isToday, isTomorrow, parseISO, intervalToDuration } from 'date-fns';
+import { format, isPast, parseISO, intervalToDuration } from 'date-fns';
 
 interface Todo {
   id: string;
@@ -31,7 +31,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const [input, setInput] = useState('');
   const [patientInput, setPatientInput] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [dueTime, setDueTime] = useState(''); // New Time State
+  const [dueTime, setDueTime] = useState('');
   const [category, setCategory] = useState('General');
   const [categories, setCategories] = useState<string[]>(['General']);
   const [isCatOpen, setIsCatOpen] = useState(false);
@@ -94,7 +94,7 @@ export default function Dashboard({ user }: DashboardProps) {
       uid: user.uid,
       category,
       dueDate,
-      dueTime, // Save Time
+      dueTime,
       createdAt: serverTimestamp()
     });
     setInput('');
@@ -146,7 +146,6 @@ export default function Dashboard({ user }: DashboardProps) {
     
     const due = parseISO(dueDateStr);
     
-    // If specific time set, use it. Otherwise end of day.
     if (dueTimeStr) {
       const [hours, mins] = dueTimeStr.split(':').map(Number);
       due.setHours(hours, mins, 0);
@@ -163,11 +162,9 @@ export default function Dashboard({ user }: DashboardProps) {
     if (duration.hours) parts.push(`${duration.hours}h`);
     if (duration.minutes) parts.push(`${duration.minutes}m`);
     
-    // Only show top 2 units for cleaner UI
     const text = parts.slice(0, 2).join(' ') + ' left'; 
     
     let color = 'text-indigo-300';
-    // Urgent logic (Red if overdue, Amber if < 4 hours)
     if (!duration.months && !duration.days && duration.hours && duration.hours < 4) color = 'text-amber-400 font-bold';
     
     return { text, color };
@@ -175,7 +172,6 @@ export default function Dashboard({ user }: DashboardProps) {
 
   const setDueToday = () => {
     setDueDate(format(new Date(), 'yyyy-MM-dd'));
-    // Optional: Set default time to 5pm if clicking "Today"? For now leave blank.
   };
 
   return (
@@ -221,7 +217,6 @@ export default function Dashboard({ user }: DashboardProps) {
           onSubmit={addTodo} 
           className="glass-panel p-2 pl-3 flex flex-wrap gap-3 items-center focus-within:ring-1 ring-indigo-500/50 transition-all"
         >
-          {/* Patient Input */}
           <div className="relative group min-w-[140px] max-w-[180px] flex-grow md:flex-grow-0">
             <UserIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400" />
             <input 
@@ -235,7 +230,6 @@ export default function Dashboard({ user }: DashboardProps) {
 
           <div className="hidden md:block h-8 w-[1px] bg-white/10"></div>
 
-          {/* Main Task Input */}
           <input 
             type="text" 
             value={input} 
@@ -244,7 +238,6 @@ export default function Dashboard({ user }: DashboardProps) {
             placeholder="Task details..." 
           />
           
-          {/* Date & Time Controls */}
           <div className="flex items-center gap-1 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
              <button 
                type="button" 
@@ -256,7 +249,6 @@ export default function Dashboard({ user }: DashboardProps) {
              </button>
              <div className="w-[1px] h-4 bg-slate-600"></div>
              
-             {/* Date Picker */}
              <input 
                type="date" 
                value={dueDate}
@@ -264,7 +256,6 @@ export default function Dashboard({ user }: DashboardProps) {
                className="bg-transparent text-slate-400 text-sm outline-none cursor-pointer hover:text-white px-2 w-[110px]"
              />
 
-             {/* Time Picker (Optional) */}
              <div className="w-[1px] h-4 bg-slate-600"></div>
              <input 
                type="time" 
@@ -274,7 +265,6 @@ export default function Dashboard({ user }: DashboardProps) {
              />
           </div>
 
-          {/* Category Dropdown */}
           <div className="relative min-w-[120px]">
              <button 
                type="button"
@@ -353,7 +343,6 @@ export default function Dashboard({ user }: DashboardProps) {
                     <div className="flex-1 min-w-0">
                       {editingId === todo.id ? (
                         <div className="flex flex-col gap-2 w-full pr-12">
-                           {/* EDIT FORM */}
                            <div className="flex gap-2">
                              <input 
                                 value={editForm.patientName}
@@ -433,7 +422,6 @@ export default function Dashboard({ user }: DashboardProps) {
                     </div>
                   </div>
 
-                  {/* Actions */}
                   <div className="flex items-center gap-2 absolute top-4 right-4 sm:static sm:ml-4 self-start">
                     {editingId === todo.id ? (
                       <>
