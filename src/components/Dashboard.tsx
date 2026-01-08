@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, AlertCircle, Pencil, X, Check } from 'lucide-react';
 import { format, isPast, isToday, isTomorrow, parseISO } from 'date-fns';
 
 interface Todo {
@@ -12,7 +12,7 @@ interface Todo {
   completed: boolean;
   uid: string;
   category: string;
-  dueDate: string; // Stored as YYYY-MM-DD string
+  dueDate: string;
   createdAt: any; 
 }
 
@@ -28,6 +28,10 @@ export default function Dashboard({ user }: DashboardProps) {
   const [categories, setCategories] = useState<string[]>(['General']);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Edit State
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+
   useEffect(() => {
     // 1. Fetch Categories
     const unsubCat = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
@@ -41,7 +45,6 @@ export default function Dashboard({ user }: DashboardProps) {
     const unsubTodos = onSnapshot(q, (snapshot) => {
       let tasks = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Todo));
       
-      // Sort: Completed bottom > Due Date (earliest first) > Created Date
       tasks.sort((a, b) => {
         if (a.completed !== b.completed) return a.completed ? 1 : -1;
         if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
@@ -55,32 +58,54 @@ export default function Dashboard({ user }: DashboardProps) {
     return () => { unsubCat(); unsubTodos(); };
   }, [user]);
 
+  // Create
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    
     await addDoc(collection(db, 'todos'), {
       text: input,
       completed: false,
       uid: user.uid,
       category,
-      dueDate, // Save the selected date
+      dueDate,
       createdAt: serverTimestamp()
     });
     setInput('');
-    setDueDate(''); // Reset date picker
+    setDueDate('');
   };
 
+  // Toggle Complete
   const toggleComplete = async (todo: Todo) => {
     if (navigator.vibrate) navigator.vibrate(50);
     await updateDoc(doc(db, 'todos', todo.id), { completed: !todo.completed });
   };
 
+  // Delete
   const deleteTodo = async (id: string) => {
     await deleteDoc(doc(db, 'todos', id));
   };
 
-  // Helper to format the date nicely (e.g., "Today", "Tomorrow", "Jan 12")
+  // Start Editing
+  const startEditing = (todo: Todo) => {
+    setEditingId(todo.id);
+    setEditText(todo.text);
+  };
+
+  // Save Edit
+  const saveEdit = async (id: string) => {
+    if (!editText.trim()) return;
+    await updateDoc(doc(db, 'todos', id), { text: editText });
+    setEditingId(null);
+    setEditText('');
+  };
+
+  // Cancel Edit
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditText('');
+  };
+
+  // Helper: Date Display
   const formatDateDisplay = (dateStr: string) => {
     if (!dateStr) return null;
     const date = parseISO(dateStr);
@@ -89,13 +114,13 @@ export default function Dashboard({ user }: DashboardProps) {
     return format(date, 'MMM d');
   };
 
-  // Helper to check urgency color
+  // Helper: Date Color
   const getDateColor = (dateStr: string, completed: boolean) => {
     if (!dateStr || completed) return 'text-slate-500';
     const date = parseISO(dateStr);
-    if (isPast(date) && !isToday(date)) return 'text-rose-400 font-bold'; // Overdue
-    if (isToday(date)) return 'text-amber-400 font-bold'; // Due Today
-    return 'text-indigo-300'; // Future
+    if (isPast(date) && !isToday(date)) return 'text-rose-400 font-bold';
+    if (isToday(date)) return 'text-amber-400 font-bold';
+    return 'text-indigo-300';
   };
 
   return (
@@ -125,19 +150,13 @@ export default function Dashboard({ user }: DashboardProps) {
           placeholder="What needs doing?" 
           autoFocus
         />
-
-        {/* Vertical Divider */}
         <div className="hidden sm:block h-8 w-[1px] bg-white/10"></div>
-
-        {/* Date Input */}
         <input 
           type="date" 
           value={dueDate}
           onChange={(e) => setDueDate(e.target.value)}
           className="bg-transparent text-slate-400 text-sm outline-none cursor-pointer hover:text-white transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.5] [&::-webkit-calendar-picker-indicator]:hover:invert"
         />
-
-        {/* Category Select */}
         <select 
           value={category} 
           onChange={(e) => setCategory(e.target.value)}
@@ -145,8 +164,6 @@ export default function Dashboard({ user }: DashboardProps) {
         >
           {categories.map(c => <option key={c} value={c} className="bg-slate-900 text-slate-300">{c}</option>)}
         </select>
-        
-        {/* Submit Button */}
         <button type="submit" className="bg-indigo-600 w-12 h-12 rounded-xl hover:bg-indigo-500 transition flex items-center justify-center text-white shadow-lg shadow-indigo-500/25 active:scale-90 ml-auto sm:ml-0">
           <Plus size={24} />
         </button>
@@ -168,37 +185,80 @@ export default function Dashboard({ user }: DashboardProps) {
                 className={`glass-panel p-4 flex flex-col sm:flex-row sm:items-center justify-between group transition-all duration-300 border-l-4 ${todo.completed ? 'border-l-slate-700 opacity-50 bg-slate-900/30' : 'border-l-indigo-500'}`}
               >
                 <div className="flex items-start sm:items-center gap-4 w-full">
-                  <button onClick={() => toggleComplete(todo)} className="text-slate-500 hover:text-indigo-400 transition mt-1 sm:mt-0">
-                    {todo.completed ? <CheckCircle2 className="text-emerald-500/80" size={24} /> : <Circle size={24} />}
-                  </button>
+                  {/* Checkbox (Only visible if not editing) */}
+                  {editingId !== todo.id && (
+                    <button onClick={() => toggleComplete(todo)} className="text-slate-500 hover:text-indigo-400 transition mt-1 sm:mt-0">
+                      {todo.completed ? <CheckCircle2 className="text-emerald-500/80" size={24} /> : <Circle size={24} />}
+                    </button>
+                  )}
                   
                   <div className="flex-1 min-w-0">
-                    <p className={`text-lg truncate transition-all ${todo.completed ? 'line-through decoration-slate-600 text-slate-500' : 'text-slate-200'}`}>
-                      {todo.text}
-                    </p>
-                    
-                    {/* Meta Data Row */}
-                    <div className="flex items-center gap-4 mt-1">
-                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-white/5 px-2 py-0.5 rounded">
-                        {todo.category}
-                      </span>
-                      
-                      {todo.dueDate && (
-                        <div className={`flex items-center gap-1 text-xs ${getDateColor(todo.dueDate, todo.completed)}`}>
-                          {isPast(parseISO(todo.dueDate)) && !isToday(parseISO(todo.dueDate)) && !todo.completed ? <AlertCircle size={12} /> : <Calendar size={12} />}
-                          <span>{formatDateDisplay(todo.dueDate)}</span>
+                    {editingId === todo.id ? (
+                      /* EDIT MODE */
+                      <div className="flex items-center gap-2 w-full">
+                         <input 
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveEdit(todo.id);
+                              if (e.key === 'Escape') cancelEdit();
+                            }}
+                            className="w-full bg-slate-800/50 text-white p-2 rounded border border-indigo-500/50 focus:outline-none focus:ring-1 ring-indigo-500"
+                            autoFocus
+                         />
+                      </div>
+                    ) : (
+                      /* READ MODE */
+                      <>
+                        <p className={`text-lg truncate transition-all ${todo.completed ? 'line-through decoration-slate-600 text-slate-500' : 'text-slate-200'}`}>
+                          {todo.text}
+                        </p>
+                        <div className="flex items-center gap-4 mt-1">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-white/5 px-2 py-0.5 rounded">
+                            {todo.category}
+                          </span>
+                          {todo.dueDate && (
+                            <div className={`flex items-center gap-1 text-xs ${getDateColor(todo.dueDate, todo.completed)}`}>
+                              {isPast(parseISO(todo.dueDate)) && !isToday(parseISO(todo.dueDate)) && !todo.completed ? <AlertCircle size={12} /> : <Calendar size={12} />}
+                              <span>{formatDateDisplay(todo.dueDate)}</span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                <button 
-                  onClick={() => deleteTodo(todo.id)} 
-                  className="absolute top-4 right-4 sm:static sm:ml-4 text-slate-600 hover:text-rose-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2 hover:bg-white/5 rounded-lg"
-                >
-                  <Trash2 size={18} />
-                </button>
+                {/* ACTION BUTTONS */}
+                <div className="flex items-center gap-2 absolute top-4 right-4 sm:static sm:ml-4">
+                  {editingId === todo.id ? (
+                    /* Save / Cancel Buttons */
+                    <>
+                      <button onClick={() => saveEdit(todo.id)} className="text-emerald-400 hover:bg-emerald-400/10 p-2 rounded-lg transition">
+                        <Check size={18} />
+                      </button>
+                      <button onClick={cancelEdit} className="text-rose-400 hover:bg-rose-400/10 p-2 rounded-lg transition">
+                        <X size={18} />
+                      </button>
+                    </>
+                  ) : (
+                    /* Edit / Delete Buttons */
+                    <>
+                      <button 
+                        onClick={() => startEditing(todo)} 
+                        className="text-slate-500 hover:text-indigo-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2 hover:bg-white/5 rounded-lg"
+                      >
+                        <Pencil size={18} />
+                      </button>
+                      <button 
+                        onClick={() => deleteTodo(todo.id)} 
+                        className="text-slate-500 hover:text-rose-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2 hover:bg-white/5 rounded-lg"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </motion.div>
             ))}
           </AnimatePresence>
