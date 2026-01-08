@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './firebase';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
@@ -8,7 +8,7 @@ import Settings from './components/Settings';
 import Navbar from './components/Navbar';
 
 function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,7 +19,7 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  if (loading) return <div className="h-screen flex items-center justify-center">Loading...</div>;
+  if (loading) return <div className="h-screen flex items-center justify-center text-slate-500">Loading...</div>;
 
   return (
     <BrowserRouter>

@@ -1,9 +1,14 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { auth } from '../firebase';
+import { User } from 'firebase/auth';
 import { LogOut, Settings as SettingsIcon, Layout } from 'lucide-react';
 
-export default function Navbar({ user }) {
+interface NavbarProps {
+  user: User;
+}
+
+export default function Navbar({ user }: NavbarProps) {
   return (
     <nav className="border-b border-white/5 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
@@ -15,7 +20,9 @@ export default function Navbar({ user }) {
           <Link to="/" className="text-slate-400 hover:text-white transition"><Layout size={20} /></Link>
           <Link to="/settings" className="text-slate-400 hover:text-white transition"><SettingsIcon size={20} /></Link>
           <div className="flex items-center gap-3 pl-6 border-l border-white/10">
-            <img src={user.photoURL} alt="User" className="w-8 h-8 rounded-full border border-white/20" />
+            {user.photoURL && (
+              <img src={user.photoURL} alt="User" className="w-8 h-8 rounded-full border border-white/20" />
+            )}
             <button onClick={() => auth.signOut()} className="text-xs text-slate-400 hover:text-red-400 transition flex gap-1 items-center">
               <LogOut size={14} /> Sign out
             </button>
