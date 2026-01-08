@@ -3,9 +3,8 @@
 @tailwind utilities;
 
 body {
-  @apply bg-slate-900 text-white font-sans antialiased;
   background: radial-gradient(circle at top left, #1e1b4b, #0f172a);
-  min-height: 100vh;
+  color: white;
 }
 
 /* 2026 Glassmorphism Utility */
