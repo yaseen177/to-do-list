@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { User } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Circle, Trash2, Plus, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 
-// Define what a Todo looks like
 interface Todo {
   id: string;
   text: string;

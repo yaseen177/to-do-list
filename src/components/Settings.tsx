@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { User } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import { motion } from 'framer-motion';
 import { Save, Layers, Plus, X } from 'lucide-react';
 
