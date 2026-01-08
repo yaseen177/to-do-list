@@ -3,8 +3,8 @@ import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, AlertCircle, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, Hourglass } from 'lucide-react';
-import { format, isPast, isToday, isTomorrow, parseISO, intervalToDuration, formatDuration, differenceInMinutes } from 'date-fns';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, Hourglass } from 'lucide-react';
+import { format, isPast, parseISO, intervalToDuration } from 'date-fns';
 
 interface Todo {
   id: string;
@@ -32,10 +32,10 @@ export default function Dashboard({ user }: DashboardProps) {
   const [dueDate, setDueDate] = useState('');
   const [category, setCategory] = useState('General');
   const [categories, setCategories] = useState<string[]>(['General']);
-  const [isCatOpen, setIsCatOpen] = useState(false); // Dropdown state
+  const [isCatOpen, setIsCatOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Time Tracker State (force refresh every minute)
+  // Time Tracker State
   const [now, setNow] = useState(new Date());
 
   // Feature State
@@ -45,7 +45,6 @@ export default function Dashboard({ user }: DashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    // Timer to update "Time Waiting" every minute
     const timer = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
@@ -62,7 +61,6 @@ export default function Dashboard({ user }: DashboardProps) {
       let tasks = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Todo));
       tasks.sort((a, b) => {
         if (a.completed !== b.completed) return a.completed ? 1 : -1;
-        // Urgent: Overdue > Due Today > Created Date
         if (a.dueDate && b.dueDate && a.dueDate !== b.dueDate) return a.dueDate.localeCompare(b.dueDate);
         return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
       });
@@ -73,7 +71,6 @@ export default function Dashboard({ user }: DashboardProps) {
     return () => { unsubCat(); unsubTodos(); };
   }, [user]);
 
-  // Search Logic
   const filteredTodos = todos.filter(todo => 
     todo.text.toLowerCase().includes(searchQuery.toLowerCase()) || 
     (todo.patientName && todo.patientName.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -107,7 +104,6 @@ export default function Dashboard({ user }: DashboardProps) {
     await deleteDoc(doc(db, 'todos', id));
   };
 
-  // Edit Logic
   const startEditing = (todo: Todo) => {
     setEditingId(todo.id);
     setEditForm({ text: todo.text, patientName: todo.patientName || '' });
@@ -123,14 +119,11 @@ export default function Dashboard({ user }: DashboardProps) {
   };
 
   // --- TIME HELPERS ---
-
-  // Calculate "Time Waiting" (Created -> Now)
   const getTimeWaiting = (createdAt: any) => {
     if (!createdAt) return 'Just now';
     const createdDate = createdAt.seconds ? new Date(createdAt.seconds * 1000) : new Date();
     const duration = intervalToDuration({ start: createdDate, end: now });
     
-    // Format: "2d 4h 12m"
     const parts = [];
     if (duration.days) parts.push(`${duration.days}d`);
     if (duration.hours) parts.push(`${duration.hours}h`);
@@ -139,11 +132,10 @@ export default function Dashboard({ user }: DashboardProps) {
     return parts.length > 0 ? parts.join(' ') : 'Just now';
   };
 
-  // Calculate "Time Remaining" (Now -> Due Date)
   const getTimeRemaining = (dueDateStr: string) => {
     if (!dueDateStr) return null;
     const due = parseISO(dueDateStr);
-    due.setHours(23, 59, 59); // End of due day
+    due.setHours(23, 59, 59);
 
     if (isPast(due)) return { text: 'Overdue', color: 'text-rose-400' };
     
@@ -153,24 +145,20 @@ export default function Dashboard({ user }: DashboardProps) {
     if (duration.days) parts.push(`${duration.days}d`);
     if (duration.hours) parts.push(`${duration.hours}h`);
     
-    const text = parts.slice(0, 2).join(' ') + ' left'; // Only show top 2 units
+    const text = parts.slice(0, 2).join(' ') + ' left'; 
     
-    // Color logic
     let color = 'text-indigo-300';
-    if (!duration.months && !duration.days && duration.hours && duration.hours < 4) color = 'text-amber-400 font-bold'; // < 4 hours
+    if (!duration.months && !duration.days && duration.hours && duration.hours < 4) color = 'text-amber-400 font-bold';
     
     return { text, color };
   };
 
-  // Set Due Date to Today Shortcut
   const setDueToday = () => {
     setDueDate(format(new Date(), 'yyyy-MM-dd'));
   };
 
   return (
     <div className="max-w-4xl mx-auto mt-8 px-4">
-      
-      {/* Header */}
       <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-200 to-white bg-clip-text text-transparent">
@@ -203,7 +191,6 @@ export default function Dashboard({ user }: DashboardProps) {
         </div>
       </header>
 
-      {/* Input Form */}
       <motion.div 
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -213,7 +200,6 @@ export default function Dashboard({ user }: DashboardProps) {
           onSubmit={addTodo} 
           className="glass-panel p-2 pl-3 flex flex-wrap gap-3 items-center focus-within:ring-1 ring-indigo-500/50 transition-all"
         >
-          {/* Patient Input */}
           <div className="relative group min-w-[140px] max-w-[180px] flex-grow md:flex-grow-0">
             <UserIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400" />
             <input 
@@ -227,7 +213,6 @@ export default function Dashboard({ user }: DashboardProps) {
 
           <div className="hidden md:block h-8 w-[1px] bg-white/10"></div>
 
-          {/* Main Task Input */}
           <input 
             type="text" 
             value={input} 
@@ -236,7 +221,6 @@ export default function Dashboard({ user }: DashboardProps) {
             placeholder="Task details..." 
           />
           
-          {/* Date Controls */}
           <div className="flex items-center gap-1 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
              <button 
                type="button" 
@@ -255,7 +239,6 @@ export default function Dashboard({ user }: DashboardProps) {
              />
           </div>
 
-          {/* Custom Category Dropdown */}
           <div className="relative min-w-[120px]">
              <button 
                type="button"
@@ -303,14 +286,12 @@ export default function Dashboard({ user }: DashboardProps) {
         </div>
       </motion.div>
 
-      {/* Task List */}
       <div className="space-y-3 pb-20 relative z-10">
         {isLoading ? (
            <div className="text-center text-slate-500 mt-10">Syncing...</div>
         ) : (
           <AnimatePresence mode="popLayout">
             {filteredTodos.map((todo) => {
-               // Calculate time metrics for this specific todo
                const remaining = getTimeRemaining(todo.dueDate);
                const waiting = getTimeWaiting(todo.createdAt);
                const createdStr = todo.createdAt?.seconds 
@@ -335,7 +316,6 @@ export default function Dashboard({ user }: DashboardProps) {
                     
                     <div className="flex-1 min-w-0">
                       {editingId === todo.id ? (
-                        /* EDIT MODE */
                         <div className="flex flex-col gap-2 w-full pr-12">
                            <input 
                               value={editForm.patientName}
@@ -353,9 +333,7 @@ export default function Dashboard({ user }: DashboardProps) {
                            />
                         </div>
                       ) : (
-                        /* READ MODE */
                         <div className={`${privacyMode ? 'blur-md hover:blur-none select-none duration-500' : ''}`}>
-                          {/* Top Row: Patient Name & Category */}
                           <div className="flex items-center gap-3 mb-1">
                             {todo.patientName && (
                               <div className="flex items-center gap-1.5 text-indigo-400 font-bold text-sm">
@@ -372,15 +350,12 @@ export default function Dashboard({ user }: DashboardProps) {
                             {todo.text}
                           </p>
                           
-                          {/* METADATA GRID */}
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-y-2 gap-x-6 mt-3 text-xs text-slate-500 border-t border-white/5 pt-2 w-full max-w-[90%]">
-                            {/* 1. Created At */}
                             <div>
                               <span className="block text-[10px] opacity-60 uppercase tracking-wide">Created</span>
                               <span className="text-slate-400">{createdStr}</span>
                             </div>
 
-                            {/* 2. Time Waiting */}
                             <div>
                               <span className="block text-[10px] opacity-60 uppercase tracking-wide">Waiting</span>
                               <div className="flex items-center gap-1 text-slate-400">
@@ -388,7 +363,6 @@ export default function Dashboard({ user }: DashboardProps) {
                               </div>
                             </div>
 
-                            {/* 3. Time Remaining (Only if Due Date exists) */}
                             {remaining && !todo.completed && (
                               <div>
                                 <span className="block text-[10px] opacity-60 uppercase tracking-wide">Remaining</span>
@@ -398,7 +372,6 @@ export default function Dashboard({ user }: DashboardProps) {
                               </div>
                             )}
                             
-                            {/* 4. Due Date (Calendar view) */}
                             {todo.dueDate && (
                               <div>
                                 <span className="block text-[10px] opacity-60 uppercase tracking-wide">Due Date</span>
@@ -414,7 +387,6 @@ export default function Dashboard({ user }: DashboardProps) {
                     </div>
                   </div>
 
-                  {/* Actions */}
                   <div className="flex items-center gap-2 absolute top-4 right-4 sm:static sm:ml-4 self-start">
                     {editingId === todo.id ? (
                       <>
