@@ -44,12 +44,12 @@ export default function Dashboard({ user }: DashboardProps) {
   const [privacyMode, setPrivacyMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Sections State (True = Open)
+  // Sections State
   const [sections, setSections] = useState({
     overdue: true,
     soon: true,
     later: true,
-    completed: false // Default closed to keep clean
+    completed: false 
   });
 
   const toggleSection = (key: keyof typeof sections) => {
@@ -71,7 +71,6 @@ export default function Dashboard({ user }: DashboardProps) {
     const q = query(collection(db, 'todos'), where('uid', '==', user.uid));
     const unsubTodos = onSnapshot(q, (snapshot) => {
       let tasks = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Todo));
-      // Basic sort for consistency inside groups
       tasks.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setTodos(tasks);
       setIsLoading(false);
@@ -90,8 +89,8 @@ export default function Dashboard({ user }: DashboardProps) {
 
     const groups = {
       overdue: [] as Todo[],
-      soon: [] as Todo[], // Within 24 hours
-      later: [] as Todo[], // After 24 hours or no date
+      soon: [] as Todo[],
+      later: [] as Todo[],
       completed: [] as Todo[]
     };
 
@@ -108,7 +107,6 @@ export default function Dashboard({ user }: DashboardProps) {
         return;
       }
 
-      // Construct Date Object
       const due = parseISO(todo.dueDate);
       if (todo.dueTime) {
         const [h, m] = todo.dueTime.split(':').map(Number);
@@ -162,6 +160,19 @@ export default function Dashboard({ user }: DashboardProps) {
   };
 
   // --- TIME HELPERS ---
+  const getTimeWaiting = (createdAt: any) => {
+    if (!createdAt) return 'Just now';
+    const createdDate = createdAt.seconds ? new Date(createdAt.seconds * 1000) : new Date();
+    const duration = intervalToDuration({ start: createdDate, end: now });
+    
+    const parts = [];
+    if (duration.days) parts.push(`${duration.days}d`);
+    if (duration.hours) parts.push(`${duration.hours}h`);
+    if (duration.minutes) parts.push(`${duration.minutes}m`);
+    
+    return parts.length > 0 ? parts.join(' ') : 'Just now';
+  };
+
   const getTimeRemaining = (dueDateStr: string, dueTimeStr?: string) => {
     if (!dueDateStr) return null;
     const due = parseISO(dueDateStr);
@@ -193,6 +204,7 @@ export default function Dashboard({ user }: DashboardProps) {
   // --- RENDER TASK ITEM ---
   const TaskItem = ({ todo }: { todo: Todo }) => {
     const remaining = getTimeRemaining(todo.dueDate, todo.dueTime);
+    const waiting = getTimeWaiting(todo.createdAt); // Used here!
     const createdStr = todo.createdAt?.seconds 
       ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM, HH:mm') 
       : 'Just now';
@@ -259,6 +271,13 @@ export default function Dashboard({ user }: DashboardProps) {
                   <div>
                     <span className="block text-[10px] opacity-60 uppercase tracking-wide">Created</span>
                     <span className="text-slate-400">{createdStr}</span>
+                  </div>
+
+                  <div>
+                     <span className="block text-[10px] opacity-60 uppercase tracking-wide">Waiting</span>
+                     <div className="flex items-center gap-1 text-slate-400">
+                       <Hourglass size={10} /> {waiting}
+                     </div>
                   </div>
 
                   {remaining && !todo.completed && (
@@ -352,9 +371,10 @@ export default function Dashboard({ user }: DashboardProps) {
 
       {/* --- SECTIONS --- */}
       <div className="pb-20 relative z-10 space-y-4">
-        
+        {isLoading && <div className="text-center text-slate-500 py-10">Syncing workspace...</div>}
+
         {/* 1. OVERDUE */}
-        {groupedTodos.overdue.length > 0 && (
+        {!isLoading && groupedTodos.overdue.length > 0 && (
           <div className="space-y-2">
             <button onClick={() => toggleSection('overdue')} className="flex items-center gap-2 text-rose-400 font-bold uppercase tracking-wider text-xs w-full hover:bg-white/5 p-2 rounded-lg transition">
               {sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -372,39 +392,43 @@ export default function Dashboard({ user }: DashboardProps) {
         )}
 
         {/* 2. DUE WITHIN 24H */}
-        <div className="space-y-2">
-          <button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-400 font-bold uppercase tracking-wider text-xs w-full hover:bg-white/5 p-2 rounded-lg transition">
-             {sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-             Due Within 24 Hours ({groupedTodos.soon.length})
-          </button>
-          <AnimatePresence>
-            {sections.soon && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                {groupedTodos.soon.map(todo => <TaskItem key={todo.id} todo={todo} />)}
-                {groupedTodos.soon.length === 0 && <p className="text-slate-600 text-sm pl-8 py-2 italic">No urgent tasks.</p>}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        {!isLoading && (
+          <div className="space-y-2">
+            <button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-400 font-bold uppercase tracking-wider text-xs w-full hover:bg-white/5 p-2 rounded-lg transition">
+               {sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+               Due Within 24 Hours ({groupedTodos.soon.length})
+            </button>
+            <AnimatePresence>
+              {sections.soon && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                  {groupedTodos.soon.map(todo => <TaskItem key={todo.id} todo={todo} />)}
+                  {groupedTodos.soon.length === 0 && <p className="text-slate-600 text-sm pl-8 py-2 italic">No urgent tasks.</p>}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* 3. DUE LATER */}
-        <div className="space-y-2">
-          <button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-300 font-bold uppercase tracking-wider text-xs w-full hover:bg-white/5 p-2 rounded-lg transition">
-             {sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-             Later / No Date ({groupedTodos.later.length})
-          </button>
-          <AnimatePresence>
-            {sections.later && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                {groupedTodos.later.map(todo => <TaskItem key={todo.id} todo={todo} />)}
-                {groupedTodos.later.length === 0 && <p className="text-slate-600 text-sm pl-8 py-2 italic">Nothing for later.</p>}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        {!isLoading && (
+          <div className="space-y-2">
+            <button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-300 font-bold uppercase tracking-wider text-xs w-full hover:bg-white/5 p-2 rounded-lg transition">
+               {sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+               Later / No Date ({groupedTodos.later.length})
+            </button>
+            <AnimatePresence>
+              {sections.later && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                  {groupedTodos.later.map(todo => <TaskItem key={todo.id} todo={todo} />)}
+                  {groupedTodos.later.length === 0 && <p className="text-slate-600 text-sm pl-8 py-2 italic">Nothing for later.</p>}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* 4. COMPLETED */}
-        {groupedTodos.completed.length > 0 && (
+        {!isLoading && groupedTodos.completed.length > 0 && (
           <div className="space-y-2 pt-6 border-t border-white/5">
             <button onClick={() => toggleSection('completed')} className="flex items-center gap-2 text-slate-500 font-bold uppercase tracking-wider text-xs w-full hover:bg-white/5 p-2 rounded-lg transition">
                {sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
