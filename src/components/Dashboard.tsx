@@ -3,12 +3,13 @@ import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, AlertCircle, Pencil, X, Check, Eye, EyeOff, Search } from 'lucide-react';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, AlertCircle, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon } from 'lucide-react';
 import { format, isPast, isToday, isTomorrow, parseISO } from 'date-fns';
 
 interface Todo {
   id: string;
   text: string;
+  patientName: string; // New field
   completed: boolean;
   uid: string;
   category: string;
@@ -20,22 +21,24 @@ interface DashboardProps {
   user: User;
 }
 
-// ⚡ Custom Templates for Opticians
 const QUICK_TEMPLATES = ["Referral:", "GOS18:", "Notes:", "Order:", "Phone:"];
 
 export default function Dashboard({ user }: DashboardProps) {
   const [todos, setTodos] = useState<Todo[]>([]);
+  
+  // Input State
   const [input, setInput] = useState('');
+  const [patientInput, setPatientInput] = useState(''); // New State
   const [dueDate, setDueDate] = useState('');
   const [category, setCategory] = useState('General');
   const [categories, setCategories] = useState<string[]>(['General']);
   const [isLoading, setIsLoading] = useState(true);
 
-  // New Features State
+  // Feature State
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState('');
-  const [privacyMode, setPrivacyMode] = useState(false); // 👁️ Privacy
-  const [searchQuery, setSearchQuery] = useState('');    // 🔍 Search
+  const [editForm, setEditForm] = useState({ text: '', patientName: '' }); // Updated for dual editing
+  const [privacyMode, setPrivacyMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const unsubCat = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
@@ -61,17 +64,20 @@ export default function Dashboard({ user }: DashboardProps) {
     return () => { unsubCat(); unsubTodos(); };
   }, [user]);
 
-  // Filter tasks based on Search
+  // Search Logic (Includes Patient Name now)
   const filteredTodos = todos.filter(todo => 
     todo.text.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (todo.patientName && todo.patientName.toLowerCase().includes(searchQuery.toLowerCase())) ||
     todo.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() && !patientInput.trim()) return;
+    
     await addDoc(collection(db, 'todos'), {
       text: input,
+      patientName: patientInput, // Save Patient Name
       completed: false,
       uid: user.uid,
       category,
@@ -79,6 +85,7 @@ export default function Dashboard({ user }: DashboardProps) {
       createdAt: serverTimestamp()
     });
     setInput('');
+    setPatientInput('');
     setDueDate('');
   };
 
@@ -91,18 +98,22 @@ export default function Dashboard({ user }: DashboardProps) {
     await deleteDoc(doc(db, 'todos', id));
   };
 
+  // Edit Logic
   const startEditing = (todo: Todo) => {
     setEditingId(todo.id);
-    setEditText(todo.text);
+    setEditForm({ text: todo.text, patientName: todo.patientName || '' });
   };
 
   const saveEdit = async (id: string) => {
-    if (!editText.trim()) return;
-    await updateDoc(doc(db, 'todos', id), { text: editText });
+    if (!editForm.text.trim()) return;
+    await updateDoc(doc(db, 'todos', id), { 
+      text: editForm.text,
+      patientName: editForm.patientName 
+    });
     setEditingId(null);
-    setEditText('');
   };
 
+  // Helpers
   const formatDateDisplay = (dateStr: string) => {
     if (!dateStr) return null;
     const date = parseISO(dateStr);
@@ -122,7 +133,6 @@ export default function Dashboard({ user }: DashboardProps) {
   return (
     <div className="max-w-4xl mx-auto mt-8 px-4">
       
-      {/* Header with Privacy Toggle */}
       <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-200 to-white bg-clip-text text-transparent">
@@ -134,7 +144,6 @@ export default function Dashboard({ user }: DashboardProps) {
           </div>
         </div>
 
-        {/* Top Controls: Search + Privacy */}
         <div className="flex items-center gap-3">
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition" size={16} />
@@ -149,7 +158,7 @@ export default function Dashboard({ user }: DashboardProps) {
           <button 
             onClick={() => setPrivacyMode(!privacyMode)}
             className={`p-2 rounded-full border transition-all ${privacyMode ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
-            title="Toggle Privacy Mode (Blur Text)"
+            title="Toggle Privacy Mode"
           >
             {privacyMode ? <EyeOff size={20} /> : <Eye size={20} />}
           </button>
@@ -164,17 +173,32 @@ export default function Dashboard({ user }: DashboardProps) {
       >
         <form 
           onSubmit={addTodo} 
-          className="glass-panel p-2 pl-4 flex flex-wrap sm:flex-nowrap gap-3 items-center focus-within:ring-1 ring-indigo-500/50 transition-all"
+          className="glass-panel p-2 pl-3 flex flex-wrap sm:flex-nowrap gap-3 items-center focus-within:ring-1 ring-indigo-500/50 transition-all"
         >
+          {/* Patient Input */}
+          <div className="relative group min-w-[140px] max-w-[180px]">
+            <UserIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400" />
+            <input 
+              type="text" 
+              value={patientInput} 
+              onChange={(e) => setPatientInput(e.target.value)} 
+              className="w-full bg-slate-900/50 border border-transparent focus:border-indigo-500/30 rounded-lg py-2 pl-9 pr-2 text-sm text-slate-200 focus:outline-none transition-all placeholder-slate-600"
+              placeholder="Patient Name" 
+            />
+          </div>
+
+          <div className="hidden sm:block h-8 w-[1px] bg-white/10"></div>
+
+          {/* Main Task Input */}
           <input 
             type="text" 
             value={input} 
             onChange={(e) => setInput(e.target.value)} 
-            className="flex-1 bg-transparent border-none focus:outline-none text-lg placeholder-slate-600 h-12 text-slate-200 min-w-[200px]"
-            placeholder="New admin task..." 
-            autoFocus
+            className="flex-1 bg-transparent border-none focus:outline-none text-lg placeholder-slate-600 h-10 text-slate-200 min-w-[180px]"
+            placeholder="Task details..." 
           />
-          <div className="hidden sm:block h-8 w-[1px] bg-white/10"></div>
+          
+          {/* Date & Category */}
           <input 
             type="date" 
             value={dueDate}
@@ -188,12 +212,11 @@ export default function Dashboard({ user }: DashboardProps) {
           >
             {categories.map(c => <option key={c} value={c} className="bg-slate-900 text-slate-300">{c}</option>)}
           </select>
-          <button type="submit" className="bg-indigo-600 w-12 h-12 rounded-xl hover:bg-indigo-500 transition flex items-center justify-center text-white shadow-lg active:scale-90 ml-auto sm:ml-0">
-            <Plus size={24} />
+          <button type="submit" className="bg-indigo-600 w-10 h-10 rounded-lg hover:bg-indigo-500 transition flex items-center justify-center text-white shadow-lg active:scale-90 ml-auto sm:ml-0">
+            <Plus size={20} />
           </button>
         </form>
 
-        {/* Quick Templates Chips */}
         <div className="flex gap-2 mt-3 overflow-x-auto pb-2 scrollbar-hide">
           {QUICK_TEMPLATES.map(tmpl => (
             <button 
@@ -222,32 +245,47 @@ export default function Dashboard({ user }: DashboardProps) {
                 exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
                 className={`glass-panel p-4 flex flex-col sm:flex-row sm:items-center justify-between group transition-all duration-300 border-l-4 ${todo.completed ? 'border-l-slate-700 opacity-50 bg-slate-900/30' : 'border-l-indigo-500'}`}
               >
-                <div className="flex items-start sm:items-center gap-4 w-full">
+                <div className="flex items-start gap-4 w-full">
                   {editingId !== todo.id && (
-                    <button onClick={() => toggleComplete(todo)} className="text-slate-500 hover:text-indigo-400 transition mt-1 sm:mt-0">
+                    <button onClick={() => toggleComplete(todo)} className="text-slate-500 hover:text-indigo-400 transition mt-1">
                       {todo.completed ? <CheckCircle2 className="text-emerald-500/80" size={24} /> : <Circle size={24} />}
                     </button>
                   )}
                   
                   <div className="flex-1 min-w-0">
                     {editingId === todo.id ? (
-                      <div className="flex items-center gap-2 w-full">
+                      /* EDIT MODE */
+                      <div className="flex flex-col gap-2 w-full pr-12">
                          <input 
-                            value={editText}
-                            onChange={(e) => setEditText(e.target.value)}
+                            value={editForm.patientName}
+                            onChange={(e) => setEditForm({ ...editForm, patientName: e.target.value })}
+                            className="w-full bg-slate-800/50 text-indigo-300 font-bold text-sm p-2 rounded border border-indigo-500/30 focus:outline-none placeholder-indigo-500/30"
+                            placeholder="Patient Name"
+                         />
+                         <input 
+                            value={editForm.text}
+                            onChange={(e) => setEditForm({ ...editForm, text: e.target.value })}
                             onKeyDown={(e) => e.key === 'Enter' && saveEdit(todo.id)}
                             className="w-full bg-slate-800/50 text-white p-2 rounded border border-indigo-500/50 focus:outline-none"
+                            placeholder="Task details"
                             autoFocus
                          />
                       </div>
                     ) : (
-                      <>
-                        {/* 👁️ PRIVACY BLUR LOGIC APPLIED HERE */}
-                        <p 
-                          className={`text-lg truncate transition-all ${todo.completed ? 'line-through decoration-slate-600 text-slate-500' : 'text-slate-200'} ${privacyMode ? 'blur-md hover:blur-none select-none duration-500' : ''}`}
-                        >
+                      /* READ MODE */
+                      <div className={`${privacyMode ? 'blur-md hover:blur-none select-none duration-500' : ''}`}>
+                        {/* Patient Name Badge */}
+                        {todo.patientName && (
+                          <div className="flex items-center gap-1.5 text-indigo-400 font-bold text-sm mb-0.5">
+                            <UserIcon size={12} />
+                            {todo.patientName}
+                          </div>
+                        )}
+
+                        <p className={`text-lg truncate transition-all ${todo.completed ? 'line-through decoration-slate-600 text-slate-500' : 'text-slate-200'}`}>
                           {todo.text}
                         </p>
+                        
                         <div className="flex items-center gap-4 mt-1">
                           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-white/5 px-2 py-0.5 rounded">
                             {todo.category}
@@ -259,12 +297,13 @@ export default function Dashboard({ user }: DashboardProps) {
                             </div>
                           )}
                         </div>
-                      </>
+                      </div>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 absolute top-4 right-4 sm:static sm:ml-4">
+                {/* Actions */}
+                <div className="flex items-center gap-2 absolute top-4 right-4 sm:static sm:ml-4 self-start">
                   {editingId === todo.id ? (
                     <>
                       <button onClick={() => saveEdit(todo.id)} className="text-emerald-400 hover:bg-emerald-400/10 p-2 rounded-lg transition"><Check size={18} /></button>
