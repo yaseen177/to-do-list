@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
@@ -24,6 +24,14 @@ interface DashboardProps {
 
 const QUICK_TEMPLATES = ["Referral:", "GOS18:", "Notes:", "Order:", "Phone:"];
 
+// 🕒 Generate 30-minute slots from 08:00 to 19:00
+const TIME_SLOTS = Array.from({ length: 23 }).map((_, i) => {
+  const totalMinutes = (8 * 60) + (i * 30); // Start at 8:00 AM
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+});
+
 export default function Dashboard({ user }: DashboardProps) {
   const [todos, setTodos] = useState<Todo[]>([]);
   
@@ -34,13 +42,18 @@ export default function Dashboard({ user }: DashboardProps) {
   const [dueTime, setDueTime] = useState('');
   const [category, setCategory] = useState('General');
   const [categories, setCategories] = useState<string[]>(['General']);
-  const [isCatOpen, setIsCatOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Dropdown UI State
+  const [isCatOpen, setIsCatOpen] = useState(false);
+  const [isTimeOpen, setIsTimeOpen] = useState(false); // New Time Dropdown State
 
   // Time & UI State
   const [now, setNow] = useState(new Date());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ text: '', patientName: '', dueTime: '' });
+  const [isEditTimeOpen, setIsEditTimeOpen] = useState(false); // Edit Mode Time Dropdown
+  
   const [privacyMode, setPrivacyMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -55,6 +68,23 @@ export default function Dashboard({ user }: DashboardProps) {
   const toggleSection = (key: keyof typeof sections) => {
     setSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
+
+  // Click Outside Handlers
+  const timeDropdownRef = useRef<HTMLDivElement>(null);
+  const catDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (timeDropdownRef.current && !timeDropdownRef.current.contains(event.target as Node)) {
+        setIsTimeOpen(false);
+      }
+      if (catDropdownRef.current && !catDropdownRef.current.contains(event.target as Node)) {
+        setIsCatOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -128,7 +158,6 @@ export default function Dashboard({ user }: DashboardProps) {
   }, [todos, searchQuery, now]);
 
   // --- ACTIONS ---
-
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() && !patientInput.trim()) return;
@@ -149,6 +178,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const startEditing = (todo: Todo) => {
     setEditingId(todo.id);
     setEditForm({ text: todo.text, patientName: todo.patientName || '', dueTime: todo.dueTime || '' });
+    setIsEditTimeOpen(false);
   };
 
   const saveEdit = async (id: string) => {
@@ -160,19 +190,6 @@ export default function Dashboard({ user }: DashboardProps) {
   };
 
   // --- TIME HELPERS ---
-  const getTimeWaiting = (createdAt: any) => {
-    if (!createdAt) return 'Just now';
-    const createdDate = createdAt.seconds ? new Date(createdAt.seconds * 1000) : new Date();
-    const duration = intervalToDuration({ start: createdDate, end: now });
-    
-    const parts = [];
-    if (duration.days) parts.push(`${duration.days}d`);
-    if (duration.hours) parts.push(`${duration.hours}h`);
-    if (duration.minutes) parts.push(`${duration.minutes}m`);
-    
-    return parts.length > 0 ? parts.join(' ') : 'Just now';
-  };
-
   const getTimeRemaining = (dueDateStr: string, dueTimeStr?: string) => {
     if (!dueDateStr) return null;
     const due = parseISO(dueDateStr);
@@ -187,11 +204,11 @@ export default function Dashboard({ user }: DashboardProps) {
     
     const duration = intervalToDuration({ start: now, end: due });
     const parts = [];
-    if (duration.months) parts.push(`${duration.months}mo`);
     if (duration.days) parts.push(`${duration.days}d`);
     if (duration.hours) parts.push(`${duration.hours}h`);
-    if (duration.minutes) parts.push(`${duration.minutes}m`);
+    if (duration.minutes) parts.push(`${duration.minutes}m`); // Added minutes for precision
     
+    // Only show top 2 significant units
     const text = parts.slice(0, 2).join(' ') + ' left'; 
     let color = 'text-indigo-300';
     if (!duration.months && !duration.days && duration.hours && duration.hours < 4) color = 'text-amber-400 font-bold';
@@ -199,12 +216,22 @@ export default function Dashboard({ user }: DashboardProps) {
     return { text, color };
   };
 
+  const getTimeWaiting = (createdAt: any) => {
+    if (!createdAt) return 'Just now';
+    const createdDate = createdAt.seconds ? new Date(createdAt.seconds * 1000) : new Date();
+    const duration = intervalToDuration({ start: createdDate, end: now });
+    const parts = [];
+    if (duration.days) parts.push(`${duration.days}d`);
+    if (duration.hours) parts.push(`${duration.hours}h`);
+    return parts.length > 0 ? parts.join(' ') : 'Just now';
+  };
+
   const setDueToday = () => setDueDate(format(new Date(), 'yyyy-MM-dd'));
 
   // --- RENDER TASK ITEM ---
   const TaskItem = ({ todo }: { todo: Todo }) => {
     const remaining = getTimeRemaining(todo.dueDate, todo.dueTime);
-    const waiting = getTimeWaiting(todo.createdAt); // Used here!
+    const waiting = getTimeWaiting(todo.createdAt);
     const createdStr = todo.createdAt?.seconds 
       ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM, HH:mm') 
       : 'Just now';
@@ -227,19 +254,41 @@ export default function Dashboard({ user }: DashboardProps) {
           <div className="flex-1 min-w-0">
             {editingId === todo.id ? (
               <div className="flex flex-col gap-2 w-full pr-12">
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 relative">
                     <input 
                       value={editForm.patientName}
                       onChange={(e) => setEditForm({ ...editForm, patientName: e.target.value })}
                       className="w-1/3 bg-slate-800/50 text-indigo-300 font-bold text-sm p-2 rounded border border-indigo-500/30 focus:outline-none"
                       placeholder="Patient Name"
                     />
-                    <input 
-                      type="time"
-                      value={editForm.dueTime}
-                      onChange={(e) => setEditForm({ ...editForm, dueTime: e.target.value })}
-                      className="bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 focus:outline-none"
-                    />
+                    
+                    {/* EDIT MODE TIME DROPDOWN */}
+                    <div className="relative">
+                      <button 
+                         onClick={() => setIsEditTimeOpen(!isEditTimeOpen)}
+                         className="flex items-center gap-2 bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 hover:bg-slate-700/50 transition w-[100px] justify-between"
+                      >
+                         <div className="flex items-center gap-1">
+                           <Clock size={14} />
+                           {editForm.dueTime || "Time"}
+                         </div>
+                      </button>
+                      
+                      {isEditTimeOpen && (
+                        <div className="absolute top-full left-0 mt-1 w-[120px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50">
+                           <button onClick={() => { setEditForm({...editForm, dueTime: ''}); setIsEditTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>
+                           {TIME_SLOTS.map(time => (
+                             <button
+                               key={time}
+                               onClick={() => { setEditForm({...editForm, dueTime: time}); setIsEditTimeOpen(false); }}
+                               className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-indigo-500/20 hover:text-indigo-300"
+                             >
+                               {time}
+                             </button>
+                           ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <input 
                     value={editForm.text}
@@ -324,7 +373,7 @@ export default function Dashboard({ user }: DashboardProps) {
 
   return (
     <div className="max-w-4xl mx-auto mt-8 px-4">
-      {/* HEADER & INPUT FORM (Kept same as before) */}
+      {/* HEADER */}
       <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-200 to-white bg-clip-text text-transparent">Clinical Admin</h1>
@@ -341,22 +390,58 @@ export default function Dashboard({ user }: DashboardProps) {
         </div>
       </header>
 
+      {/* ADD FORM */}
       <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-8 relative z-20">
         <form onSubmit={addTodo} className="glass-panel p-2 pl-3 flex flex-wrap gap-3 items-center focus-within:ring-1 ring-indigo-500/50 transition-all">
+          
           <div className="relative group min-w-[140px] max-w-[180px] flex-grow md:flex-grow-0">
             <UserIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400" />
             <input type="text" value={patientInput} onChange={(e) => setPatientInput(e.target.value)} className="w-full bg-slate-900/50 border border-transparent focus:border-indigo-500/30 rounded-lg py-2 pl-9 pr-2 text-sm text-slate-200 focus:outline-none transition-all placeholder-slate-600" placeholder="Patient Name" />
           </div>
+          
           <div className="hidden md:block h-8 w-[1px] bg-white/10"></div>
+          
           <input type="text" value={input} onChange={(e) => setInput(e.target.value)} className="flex-1 bg-transparent border-none focus:outline-none text-lg placeholder-slate-600 h-10 text-slate-200 min-w-[180px]" placeholder="Task details..." />
+          
+          {/* DATE & TIME CONTROLS */}
           <div className="flex items-center gap-1 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
              <button type="button" onClick={setDueToday} className="p-1.5 text-slate-400 hover:text-indigo-300 hover:bg-white/5 rounded-md transition" title="Due Today"><Target size={18} /></button>
              <div className="w-[1px] h-4 bg-slate-600"></div>
              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="bg-transparent text-slate-400 text-sm outline-none cursor-pointer hover:text-white px-2 w-[110px]" />
+             
              <div className="w-[1px] h-4 bg-slate-600"></div>
-             <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} className="bg-transparent text-slate-400 text-sm outline-none cursor-pointer hover:text-white px-1 w-[80px]" />
+             
+             {/* CUSTOM TIME DROPDOWN */}
+             <div className="relative" ref={timeDropdownRef}>
+               <button 
+                 type="button" 
+                 onClick={() => setIsTimeOpen(!isTimeOpen)}
+                 className="flex items-center gap-1 bg-transparent text-slate-400 text-sm hover:text-white px-2 py-1 transition min-w-[70px] justify-center"
+               >
+                 <Clock size={14} />
+                 <span>{dueTime || "Time"}</span>
+               </button>
+
+               {isTimeOpen && (
+                 <div className="absolute top-full right-0 mt-2 w-[100px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50">
+                   <button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>
+                   {TIME_SLOTS.map(time => (
+                     <button
+                       key={time}
+                       type="button"
+                       onClick={() => { setDueTime(time); setIsTimeOpen(false); }}
+                       className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-indigo-500/20 hover:text-indigo-300"
+                     >
+                       {time}
+                     </button>
+                   ))}
+                 </div>
+               )}
+             </div>
           </div>
-          <div className="relative min-w-[120px]">
+
+          {/* CATEGORY DROPDOWN */}
+          <div className="relative min-w-[120px]" ref={catDropdownRef}>
              <button type="button" onClick={() => setIsCatOpen(!isCatOpen)} className="w-full flex items-center justify-between gap-2 bg-slate-800/50 border border-slate-700/50 hover:border-indigo-500/50 px-3 py-2 rounded-lg text-sm text-slate-300 transition"><span className="truncate">{category}</span><ChevronDown size={14} className={`transition-transform ${isCatOpen ? 'rotate-180' : ''}`} /></button>
              {isCatOpen && (
                <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="absolute top-full right-0 mt-2 w-[180px] bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-50 py-1">
@@ -443,7 +528,6 @@ export default function Dashboard({ user }: DashboardProps) {
             </AnimatePresence>
           </div>
         )}
-
       </div>
     </div>
   );
