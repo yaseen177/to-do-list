@@ -29,7 +29,7 @@ interface CalendarEvent {
   end: Date;
   source: 'google' | 'outlook';
   color: string;
-  calendarName?: string; // e.g., "Holidays"
+  calendarName?: string;
 }
 
 interface ExternalCalendar {
@@ -114,9 +114,11 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
   return parts.length > 0 ? parts.join(' ') : 'Just now';
 };
 
-// --- CALENDAR MANAGER MODAL (NEW) ---
+// --- CALENDAR MANAGER MODAL ---
 const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, googleConnected, onConnectOutlook, onConnectGoogle, onDisconnect, calendars, toggleCalendar }: any) => {
   if (!isOpen) return null;
+
+  const outlookCalendars = calendars.filter((c: any) => c.source === 'outlook');
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -132,12 +134,15 @@ const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, googleConnect
           <div className="space-y-3">
              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-white font-bold text-sm"><img src="https://www.google.com/favicon.ico" alt="G" className="w-4 h-4"/> Google Calendar</div>
-                {googleConnected ? <button onClick={() => onDisconnect('google')} className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded hover:bg-rose-500/20">Disconnect</button> : <button onClick={onConnectGoogle} className="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-500">Connect</button>}
+                {googleConnected ? (
+                  <button onClick={() => onDisconnect('google')} className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded hover:bg-rose-500/20">Disconnect</button>
+                ) : (
+                  <button onClick={onConnectGoogle} className="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-500">Connect</button>
+                )}
              </div>
              {googleConnected && (
                <div className="bg-slate-800/50 rounded-lg p-2 space-y-1">
                   <div className="text-[10px] text-slate-500 uppercase font-bold px-2">Sub-Calendars</div>
-                  {/* Google Calendar API usually just gives 'primary' easily, can be expanded later */}
                   <div className="flex items-center gap-2 p-2 hover:bg-white/5 rounded cursor-not-allowed opacity-70">
                      <CheckCircle2 size={14} className="text-emerald-500"/>
                      <span className="text-xs text-slate-300">Primary Calendar</span>
@@ -152,15 +157,20 @@ const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, googleConnect
                 <div className="flex items-center gap-2 text-white font-bold text-sm">
                    <div className="w-4 h-4 bg-[#0078D4] text-white flex items-center justify-center text-[10px] rounded font-bold">O</div> Outlook Calendar
                 </div>
-                {outlookConnected ? <button onClick={() => onDisconnect('outlook')} className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded hover:bg-rose-500/20">Disconnect</button> : <button onClick={onConnectOutlook} className="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-500">Connect</button>}
+                {outlookConnected ? (
+                  <button onClick={() => onDisconnect('outlook')} className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded hover:bg-rose-500/20">Disconnect</button>
+                ) : (
+                  <button onClick={onConnectOutlook} className="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-500">Connect</button>
+                )}
              </div>
              
              {outlookConnected && (
                <div className="bg-slate-800/50 rounded-lg p-2 space-y-1">
                   <div className="text-[10px] text-slate-500 uppercase font-bold px-2 mb-1">Select Calendars to View</div>
-                  {calendars.filter((c:any) => c.source === 'outlook').length === 0 && <div className="text-xs text-slate-500 px-2 italic">Loading calendars...</div>}
-                  
-                  {calendars.filter((c:any) => c.source === 'outlook').map((cal: ExternalCalendar) => (
+                  {outlookCalendars.length === 0 && (
+                    <div className="text-xs text-slate-500 px-2 italic">Loading calendars...</div>
+                  )}
+                  {outlookCalendars.map((cal: ExternalCalendar) => (
                     <button key={cal.id} onClick={() => toggleCalendar(cal.id)} className="w-full flex items-center gap-2 p-2 hover:bg-white/5 rounded transition text-left">
                        {cal.isActive ? <CheckCircle2 size={16} className="text-sky-400"/> : <Circle size={16} className="text-slate-600"/>}
                        <span className={`text-xs ${cal.isActive ? 'text-white' : 'text-slate-500'}`}>{cal.name}</span>
@@ -176,7 +186,7 @@ const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, googleConnect
   );
 };
 
-// --- SETTINGS MODAL (Reduced) ---
+// --- SETTINGS MODAL ---
 const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories }: any) => {
   const [activeTab, setActiveTab] = useState<'rota' | 'categories' | 'account'>('rota');
   const [localRotas, setLocalRotas] = useState<RotaSystem>(rotas);
@@ -203,7 +213,6 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
 
   if (!isOpen) return null;
 
-  // ... (Rota & Category Handlers kept same) ...
   const handleRotaChange = (day: string, field: keyof DaySchedule, value: any) => { const updatedRotas = [...localRotas]; updatedRotas[activeWeekIndex] = { ...updatedRotas[activeWeekIndex], [day]: { ...updatedRotas[activeWeekIndex][day], [field]: value } }; setLocalRotas(updatedRotas); };
   const addWeek = () => { setLocalRotas([...localRotas, JSON.parse(JSON.stringify(DEFAULT_WEEK))]); setActiveWeekIndex(localRotas.length); };
   const removeWeek = (index: number) => { if(localRotas.length<=1)return; setLocalRotas(localRotas.filter((_,i)=>i!==index)); setActiveWeekIndex(0); };
@@ -225,6 +234,7 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
           <button onClick={() => setActiveTab('categories')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'categories' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Categories</button>
           <button onClick={() => setActiveTab('account')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'account' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Account</button>
         </div>
+        
         {activeTab === 'rota' && (
           <>
             <div className="bg-indigo-500/10 border-b border-indigo-500/20 p-4"><div className="flex items-center justify-between mb-2"><span className="text-sm font-bold text-indigo-200 flex items-center gap-2"><RefreshCw size={14}/> Sync Current Week</span><span className="text-xs text-indigo-300/60">{format(new Date(), 'd MMM')}</span></div><div className="flex items-center gap-3"><span className="text-sm text-slate-300">This week is:</span><div className="relative flex-1"><select value={currentWeekSelection} onChange={(e) => setCurrentWeekSelection(Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 appearance-none cursor-pointer focus:border-indigo-500 focus:outline-none">{localRotas.map((_, idx) => (<option key={idx} value={idx}>Week {idx + 1}</option>))}</select><ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" /></div></div></div>
@@ -233,11 +243,27 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
             <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button><button onClick={handleSaveRota} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2"><Save size={16} /> Save Rota</button></div>
           </>
         )}
+
         {activeTab === 'categories' && (
-          <div className="flex-1 flex flex-col min-h-0"><div className="p-6 space-y-6 overflow-y-auto flex-1"><div className="flex gap-2"><input value={newCat} onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()} placeholder="New Category Name..." className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:border-indigo-500 outline-none"/><button onClick={handleAddCategory} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg"><Plus size={20}/></button></div><div className="space-y-2">{localCategories.map(cat => (<div key={cat} className="flex items-center justify-between p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg group"><span className="text-slate-200 text-sm font-medium">{cat}</span><button onClick={() => handleRemoveCategory(cat)} className="text-slate-500 hover:text-rose-400 transition opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button></div>))}{localCategories.length === 0 && <div className="text-center text-slate-500 text-sm py-4">No categories set.</div>}</div></div><div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Close</button><button onClick={handleSaveCategories} disabled={saveStatus !== 'idle'} className={`px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${saveStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>{saveStatus === 'saving' ? <>Saving...</> : saveStatus === 'success' ? <><Check size={16}/> Saved!</> : <><Save size={16}/> Save Categories</>}</button></div></div>
+          <>
+            <div className="flex-1 flex flex-col min-h-0">
+                <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                    <div className="flex gap-2"><input value={newCat} onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()} placeholder="New Category Name..." className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:border-indigo-500 outline-none"/><button onClick={handleAddCategory} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg"><Plus size={20}/></button></div>
+                    <div className="space-y-2">{localCategories.map(cat => (<div key={cat} className="flex items-center justify-between p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg group"><span className="text-slate-200 text-sm font-medium">{cat}</span><button onClick={() => handleRemoveCategory(cat)} className="text-slate-500 hover:text-rose-400 transition opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button></div>))}{localCategories.length === 0 && <div className="text-center text-slate-500 text-sm py-4">No categories set.</div>}</div>
+                </div>
+            </div>
+            <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0">
+                <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Close</button>
+                <button onClick={handleSaveCategories} disabled={saveStatus !== 'idle'} className={`px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${saveStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>{saveStatus === 'saving' ? <>Saving...</> : saveStatus === 'success' ? <><Check size={16}/> Saved!</> : <><Save size={16}/> Save Categories</>}</button>
+            </div>
+          </>
         )}
+
         {activeTab === 'account' && (
-          <div className="p-6 space-y-6 overflow-y-auto flex-1"><div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50"><h3 className="text-white font-bold flex items-center gap-2 mb-4"><Lock size={18} className="text-indigo-400"/> Authentication</h3>{isGoogleAuth ? (<div className="flex flex-col items-center justify-center py-4 space-y-3"><div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg"><img src="https://www.google.com/favicon.ico" alt="Google" className="w-6 h-6" /></div><div className="text-center"><p className="text-white font-medium">Connected with Google</p><p className="text-xs text-slate-400 mt-1 max-w-[200px]">Password & Security are managed via your Google Account.</p></div></div>) : (<div className="space-y-4"><label className="text-xs text-slate-400 uppercase font-bold tracking-wider">Change Password</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="New Password" /><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="Confirm Password" />{passwordMsg.text && <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{passwordMsg.text}</div>}<button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition">Update Password</button></div>)}</div><div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30"><h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3><p className="text-xs text-slate-500 leading-relaxed">Your data is stored securely in compliance with UK GDPR standards.</p></div></div>
+          <div className="p-6 space-y-6 overflow-y-auto flex-1">
+             <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50"><h3 className="text-white font-bold flex items-center gap-2 mb-4"><Lock size={18} className="text-indigo-400"/> Authentication</h3>{isGoogleAuth ? (<div className="flex flex-col items-center justify-center py-4 space-y-3"><div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg"><img src="https://www.google.com/favicon.ico" alt="Google" className="w-6 h-6" /></div><div className="text-center"><p className="text-white font-medium">Connected with Google</p><p className="text-xs text-slate-400 mt-1 max-w-[200px]">Password & Security are managed via your Google Account.</p></div></div>) : (<div className="space-y-4"><label className="text-xs text-slate-400 uppercase font-bold tracking-wider">Change Password</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="New Password" /><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="Confirm Password" />{passwordMsg.text && <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{passwordMsg.text}</div>}<button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition">Update Password</button></div>)}</div>
+             <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30"><h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3><p className="text-xs text-slate-500 leading-relaxed">Your data is stored securely in compliance with UK GDPR standards.</p></div>
+          </div>
         )}
       </motion.div>
     </div>
@@ -266,11 +292,8 @@ const CalendarView = ({ todos, currentDate, setCurrentDate, onEdit, googleEvents
           </div>
         </div>
         
-        {/* CALENDAR CONTROLS */}
         <div className="flex gap-2">
-           <button onClick={() => setIsManagerOpen(true)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition">
-              <Link2 size={14} /> Connect Accounts
-           </button>
+           <button onClick={() => setIsManagerOpen(true)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition"><Link2 size={14} /> Connect Accounts</button>
            <div className="relative">
              <button onClick={() => setIsFilterOpen(!isFilterOpen)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition"><Layers size={14} /> Filter</button>
              {isFilterOpen && (
@@ -283,32 +306,21 @@ const CalendarView = ({ todos, currentDate, setCurrentDate, onEdit, googleEvents
            </div>
         </div>
       </div>
-      <div className="grid grid-cols-7 bg-slate-800/50 border-b border-slate-700 text-center py-2">
-        {weekDays.map(d => <div key={d} className="text-xs font-bold text-slate-500 uppercase tracking-wider">{d}</div>)}
-      </div>
+      <div className="grid grid-cols-7 bg-slate-800/50 border-b border-slate-700 text-center py-2">{weekDays.map(d => <div key={d} className="text-xs font-bold text-slate-500 uppercase tracking-wider">{d}</div>)}</div>
       <div className="grid grid-cols-7 auto-rows-fr bg-slate-900">
         {allDays.map((dayItem) => {
           const dayString = format(dayItem, 'yyyy-MM-dd');
           const isCurrentMonth = isSameMonth(dayItem, monthStart);
           const isToday = isSameDay(dayItem, new Date());
-          
           const daysTasks = visibleCalendars.tasks ? todos.filter((t: Todo) => t.dueDate === dayString) : [];
           const daysGoogle = visibleCalendars.google ? googleEvents.filter((e: CalendarEvent) => isSameDay(e.start, dayItem)) : [];
           const daysOutlook = visibleCalendars.outlook ? outlookEvents.filter((e: CalendarEvent) => isSameDay(e.start, dayItem)) : [];
 
           return (
             <div key={dayString} className={`min-h-[100px] p-2 border-b border-r border-slate-800/50 flex flex-col gap-1 transition-colors ${!isCurrentMonth ? 'bg-slate-900/30 text-slate-600' : 'bg-transparent text-slate-300'} ${isToday ? 'bg-indigo-500/5' : ''}`}>
-              <div className="flex justify-between items-start">
-                <span className={`text-sm font-medium ${isToday ? 'bg-indigo-600 text-white w-6 h-6 flex items-center justify-center rounded-full shadow-lg shadow-indigo-500/50' : ''}`}>
-                  {format(dayItem, 'd')}
-                </span>
-              </div>
+              <div className="flex justify-between items-start"><span className={`text-sm font-medium ${isToday ? 'bg-indigo-600 text-white w-6 h-6 flex items-center justify-center rounded-full shadow-lg shadow-indigo-500/50' : ''}`}>{format(dayItem, 'd')}</span></div>
               <div className="flex-1 flex flex-col gap-1 mt-1 overflow-y-auto max-h-[80px] scrollbar-hide">
-                {daysTasks.map((t: Todo) => (
-                  <button key={t.id} onClick={() => onEdit(t)} className={`text-left text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 hover:opacity-80 transition active:scale-95 ${t.completed ? 'opacity-40 line-through bg-slate-800 border-slate-600 text-slate-500' : t.priority === 'high' ? 'bg-rose-500/10 border-rose-500 text-rose-300' : t.priority === 'medium' ? 'bg-amber-500/10 border-amber-500 text-amber-300' : 'bg-blue-500/10 border-blue-500 text-blue-300'}`}>
-                    {t.patientName ? <span className="font-bold mr-1">{t.patientName}</span> : null}{t.text}
-                  </button>
-                ))}
+                {daysTasks.map((t: Todo) => (<button key={t.id} onClick={() => onEdit(t)} className={`text-left text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 hover:opacity-80 transition active:scale-95 ${t.completed ? 'opacity-40 line-through bg-slate-800 border-slate-600 text-slate-500' : t.priority === 'high' ? 'bg-rose-500/10 border-rose-500 text-rose-300' : t.priority === 'medium' ? 'bg-amber-500/10 border-amber-500 text-amber-300' : 'bg-blue-500/10 border-blue-500 text-blue-300'}`}>{t.patientName ? <span className="font-bold mr-1">{t.patientName}</span> : null}{t.text}</button>))}
                 {daysGoogle.map((e: CalendarEvent) => (<div key={e.id} className="text-left text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 bg-emerald-500/10 border-emerald-500 text-emerald-300" title="Google Calendar Event">{e.title}</div>))}
                 {daysOutlook.map((e: CalendarEvent) => (<div key={e.id} className="text-left text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 bg-sky-500/10 border-sky-500 text-sky-300" title={`Outlook: ${e.calendarName || 'Event'}`}>{e.title}</div>))}
               </div>
@@ -620,6 +632,17 @@ export default function Dashboard({ user }: DashboardProps) {
     };
   }, [todos]);
 
+  // --- CATEGORY STATS (NEW) ---
+  const categoryStats = useMemo(() => {
+    const counts: Record<string, number> = {};
+    todos.forEach(t => {
+      if (!t.completed && t.status !== 'done') {
+        counts[t.category] = (counts[t.category] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [todos]);
+
   // --- GROUPING ---
   const groupedTodos = useMemo(() => {
     const filtered = todos.filter(t => 
@@ -916,15 +939,32 @@ export default function Dashboard({ user }: DashboardProps) {
       )}
 
       {/* FOOTER */}
-      <div className="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-md border-t border-slate-800 p-3 z-50">
-         <div className="max-w-6xl mx-auto flex items-center justify-between text-xs sm:text-sm text-slate-400">
-            <div className="flex gap-4">
+      <div className="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 p-2 z-50 transition-all duration-300">
+         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm text-slate-400">
+            {/* Left: General Stats */}
+            <div className="flex gap-4 min-w-fit">
               <span className="flex items-center gap-1"><LayoutTemplate size={14}/> Total: <strong className="text-white">{stats.total}</strong></span>
               <span className="flex items-center gap-1 text-rose-400"><Flag size={14}/> Urgent: <strong className="text-rose-300">{stats.urgent}</strong></span>
               <span className="flex items-center gap-1 text-amber-400"><Hourglass size={14}/> Waiting: <strong className="text-amber-300">{stats.waiting}</strong></span>
             </div>
-            <div className="flex items-center gap-1 text-emerald-500">
-               <CheckCircle2 size={14} /> Completed Today: <strong className="text-emerald-400">{stats.completedToday}</strong>
+
+            {/* Center: Category Breakdown */}
+            <div className="flex-1 flex gap-3 overflow-x-auto scrollbar-hide px-4 mask-fade-sides justify-center max-w-full">
+                {Object.entries(categoryStats).map(([cat, count]) => (
+                   <span key={cat} className="flex items-center gap-1 whitespace-nowrap text-slate-500 text-[10px] sm:text-xs">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span> {cat}: <strong className="text-slate-300">{count}</strong>
+                   </span>
+                ))}
+            </div>
+
+            {/* Right: Completed & Credits */}
+            <div className="flex flex-col items-end gap-0.5 min-w-fit text-right">
+                <div className="flex items-center gap-1 text-emerald-500">
+                   <CheckCircle2 size={14} /> Done Today: <strong className="text-emerald-400">{stats.completedToday}</strong>
+                </div>
+                <div className="text-[9px] text-slate-600 font-medium">
+                   Created by Yaseen Hussain &copy; 2026
+                </div>
             </div>
          </div>
       </div>
