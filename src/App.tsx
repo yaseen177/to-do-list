@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
-import type { User } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './firebase';
-import Login from './components/Login';
 import Dashboard from './components/Dashboard';
-import Settings from './components/Settings';
-import Navbar from './components/Navbar';
+import Login from './components/Login';
 
-function App() {
+// Loading Spinner Component
+const LoadingScreen = () => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-900 text-slate-500">
+    <div className="animate-pulse flex flex-col items-center gap-4">
+      <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
+      <span className="text-sm font-medium">Loading workspace...</span>
+    </div>
+  </div>
+);
+
+export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -20,20 +26,11 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  if (loading) return <div className="h-screen flex items-center justify-center text-slate-500">Loading...</div>;
+  if (loading) return <LoadingScreen />;
 
   return (
-    <BrowserRouter>
-      {user && <Navbar user={user} />}
-      <div className="p-4 max-w-5xl mx-auto">
-        <Routes>
-          <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
-          <Route path="/" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
-          <Route path="/settings" element={user ? <Settings user={user} /> : <Navigate to="/login" />} />
-        </Routes>
-      </div>
-    </BrowserRouter>
+    <>
+      {user ? <Dashboard user={user} /> : <Login />}
+    </>
   );
 }
-
-export default App;

@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase';
-import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, setDoc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon } from 'lucide-react';
-import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, getDay } from 'date-fns';
+import { format, isPast, parseISO, intervalToDuration, addHours, isBefore } from 'date-fns';
 
 // --- TYPES ---
 interface Todo {
@@ -23,7 +23,7 @@ interface Todo {
 
 // 🗓️ Schedule Types
 type DaySchedule = { start: string; end: string; isOff: boolean };
-type WeeklySchedule = Record<string, DaySchedule>; // "monday": {...}
+type WeeklySchedule = Record<string, DaySchedule>;
 
 const DEFAULT_SCHEDULE: WeeklySchedule = {
   monday: { start: '09:00', end: '17:30', isOff: false },
@@ -49,15 +49,15 @@ const TIME_SLOTS = Array.from({ length: 23 }).map((_, i) => {
 
 // --- HELPER FUNCTIONS ---
 const getDayName = (dateStr: string) => {
-  if (!dateStr) return 'monday'; // Default
+  if (!dateStr) return 'monday';
   const date = parseISO(dateStr);
-  return format(date, 'EEEE').toLowerCase(); // "monday", "tuesday"...
+  return format(date, 'EEEE').toLowerCase(); 
 };
 
 const getShiftEndTime = (dateStr: string, schedule: WeeklySchedule) => {
   const day = getDayName(dateStr);
   const daySettings = schedule[day] || DEFAULT_SCHEDULE.monday;
-  if (daySettings.isOff) return '17:30'; // Default fallback if off
+  if (daySettings.isOff) return '17:30'; 
   return daySettings.end;
 };
 
