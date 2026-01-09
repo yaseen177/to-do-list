@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { db, auth } from '../firebase';
+import { db, auth, googleProvider } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { signOut, updatePassword } from 'firebase/auth';
+import { signOut, updatePassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Circle, Trash2, Plus, Calendar as CalendarIcon, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, ChevronLeft, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Sun, Layers, Globe } from 'lucide-react';
@@ -107,7 +107,7 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
 };
 
 // --- SETTINGS MODAL ---
-const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories, outlookConnected, onConnectOutlook }: any) => {
+const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories, outlookConnected, googleConnected, onConnectOutlook, onConnectGoogle, onDisconnectCalendar }: any) => {
   const [activeTab, setActiveTab] = useState<'rota' | 'categories' | 'account'>('rota');
   const [localRotas, setLocalRotas] = useState<RotaSystem>(rotas);
   const [activeWeekIndex, setActiveWeekIndex] = useState(0);
@@ -236,19 +236,32 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
              <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
                 <h3 className="text-white font-bold flex items-center gap-2 mb-4"><Globe size={18} className="text-indigo-400"/> Connected Calendars</h3>
                 <div className="space-y-3">
-                   <button onClick={onConnectOutlook} className="w-full flex items-center justify-between p-3 bg-slate-900 border border-slate-700 rounded-lg hover:bg-slate-800 transition">
+                   {/* GOOGLE CALENDAR BUTTON */}
+                   <div className="w-full flex items-center justify-between p-3 bg-slate-900 border border-slate-700 rounded-lg hover:bg-slate-800 transition">
+                      <div className="flex items-center gap-3">
+                         <div className="w-8 h-8 bg-white rounded flex items-center justify-center shadow-sm"><img src="https://www.google.com/favicon.ico" alt="G" className="w-4 h-4" /></div>
+                         <div className="text-left">
+                            <div className="text-sm font-bold text-white">Google Calendar</div>
+                            <div className="text-xs text-slate-500">{googleConnected ? 'Connected (Auto-refresh)' : 'Not connected'}</div>
+                         </div>
+                      </div>
+                      {googleConnected ? <button onClick={() => onDisconnectCalendar('google')} className="p-2 text-rose-400 hover:bg-rose-500/10 rounded"><X size={16}/></button> : <button onClick={onConnectGoogle} className="text-xs text-indigo-400 font-bold hover:underline">Connect</button>}
+                   </div>
+
+                   {/* OUTLOOK BUTTON */}
+                   <div className="w-full flex items-center justify-between p-3 bg-slate-900 border border-slate-700 rounded-lg hover:bg-slate-800 transition">
                       <div className="flex items-center gap-3">
                          <div className="w-8 h-8 bg-[#0078D4] rounded flex items-center justify-center text-white font-bold text-xs">O</div>
                          <div className="text-left">
                             <div className="text-sm font-bold text-white">Outlook Calendar</div>
-                            <div className="text-xs text-slate-500">{outlookConnected ? 'Connected' : 'Not connected'}</div>
+                            <div className="text-xs text-slate-500">{outlookConnected ? 'Connected (Auto-refresh)' : 'Not connected'}</div>
                          </div>
                       </div>
-                      {outlookConnected ? <CheckCircle2 size={18} className="text-emerald-500"/> : <span className="text-xs text-indigo-400 font-bold">Connect</span>}
-                   </button>
+                      {outlookConnected ? <button onClick={() => onDisconnectCalendar('outlook')} className="p-2 text-rose-400 hover:bg-rose-500/10 rounded"><X size={16}/></button> : <button onClick={onConnectOutlook} className="text-xs text-indigo-400 font-bold hover:underline">Connect</button>}
+                   </div>
                 </div>
              </div>
-             <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30"><h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3><p className="text-xs text-slate-500 leading-relaxed">Your data is stored securely in compliance with UK GDPR standards.</p></div>
+             <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30"><h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3><p className="text-xs text-slate-500 leading-relaxed">External calendar data is fetched live and never stored on our servers.</p></div>
           </div>
         )}
       </motion.div>
@@ -413,6 +426,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const [outlookEvents, setOutlookEvents] = useState<CalendarEvent[]>([]);
   const [visibleCalendars, setVisibleCalendars] = useState({ tasks: true, google: true, outlook: true });
   const [outlookConnected, setOutlookConnected] = useState(false); 
+  const [googleConnected, setGoogleConnected] = useState(false);
 
   // Input State
   const [input, setInput] = useState('');
@@ -485,58 +499,109 @@ export default function Dashboard({ user }: DashboardProps) {
       }
     });
 
-    // --- FETCH GOOGLE CALENDAR EVENTS (PLACEHOLDER) ---
-    const fetchGoogleEvents = async () => {
-      try {
-        // Real implementation requires using the Google Calendar API client library
-        setGoogleEvents([]); // Initialized to empty to satisfy TS
-      } catch (err) { console.error("Google Calendar Error:", err); }
-    };
-    if (user.providerData.some(p => p.providerId === 'google.com')) fetchGoogleEvents();
-    
     return () => { clearInterval(timer); unsub(); };
   }, [user]);
 
-  // --- HANDLE MICROSOFT REDIRECT ---
-  useEffect(() => {
-    // Check if URL has a hash (Microsoft returns token in hash)
-    if (window.location.hash.includes("access_token")) {
-      const hash = window.location.hash.substring(1);
-      const params = new URLSearchParams(hash);
-      const accessToken = params.get("access_token");
+  // --- CALENDAR CONNECTION LOGIC ---
+  const loadCalendarEvents = async (source: 'google' | 'outlook', token: string) => {
+    const start = startOfMonth(new Date()).toISOString();
+    const end = endOfMonth(new Date()).toISOString();
 
-      if (accessToken) {
-        // Clear hash to clean up URL
+    if (source === 'google') {
+      try {
+        const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${start}&timeMax=${end}&singleEvents=true&orderBy=startTime`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.items) {
+          const events = data.items.map((e: any) => ({
+            id: e.id,
+            title: e.summary || 'Busy',
+            start: new Date(e.start.dateTime || e.start.date),
+            end: new Date(e.end.dateTime || e.end.date),
+            source: 'google',
+            color: 'emerald'
+          }));
+          setGoogleEvents(events);
+          setGoogleConnected(true);
+        }
+      } catch (err) { console.error("Google Fetch Error", err); }
+    } 
+    else if (source === 'outlook') {
+      try {
+        const res = await fetch("https://graph.microsoft.com/v1.0/me/calendar/events", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.value) {
+          const events = data.value.map((e: any) => ({
+            id: e.id,
+            title: e.subject,
+            start: new Date(e.start.dateTime),
+            end: new Date(e.end.dateTime),
+            source: 'outlook',
+            color: 'sky'
+          }));
+          setOutlookEvents(events);
+          setOutlookConnected(true);
+        }
+      } catch (err) { console.error("Outlook Fetch Error", err); }
+    }
+  };
+
+  // CHECK LOCAL STORAGE ON LOAD
+  useEffect(() => {
+    // Check Google
+    const gToken = localStorage.getItem(`google_token_${user.uid}`);
+    if (gToken) loadCalendarEvents('google', gToken);
+
+    // Check Outlook
+    const oToken = localStorage.getItem(`outlook_token_${user.uid}`);
+    if (oToken) loadCalendarEvents('outlook', oToken);
+
+    // Handle Outlook Redirect
+    if (window.location.hash.includes("access_token")) {
+      const token = new URLSearchParams(window.location.hash.substring(1)).get("access_token");
+      if (token) {
+        localStorage.setItem(`outlook_token_${user.uid}`, token);
         window.history.replaceState(null, "", " ");
-        
-        // Fetch Events using the token
-        const fetchOutlookEvents = async () => {
-          try {
-            const res = await fetch("https://graph.microsoft.com/v1.0/me/calendar/events", {
-              headers: { Authorization: `Bearer ${accessToken}` }
-            });
-            const data = await res.json();
-            
-            if (data.value) {
-              const events = data.value.map((e: any) => ({
-                id: e.id,
-                title: e.subject,
-                start: new Date(e.start.dateTime),
-                end: new Date(e.end.dateTime),
-                source: 'outlook',
-                color: 'sky'
-              }));
-              setOutlookEvents(events);
-              setOutlookConnected(true);
-            }
-          } catch (err) {
-            console.error("Outlook API Error:", err);
-          }
-        };
-        fetchOutlookEvents();
+        loadCalendarEvents('outlook', token);
       }
     }
-  }, []);
+  }, [user]);
+
+  const handleConnectGoogle = async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const token = credential?.accessToken;
+      if (token) {
+        localStorage.setItem(`google_token_${user.uid}`, token);
+        loadCalendarEvents('google', token);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleConnectOutlook = () => {
+    const CLIENT_ID = "4011de3a-f635-4cfd-96ca-556cc1980fca"; // REPLACE THIS
+    const REDIRECT_URI = "https://to-do-list-35e.pages.dev/"; 
+    const SCOPES = "Calendars.Read";
+    window.location.href = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${REDIRECT_URI}&scope=${SCOPES}`;
+  };
+
+  const handleDisconnectCalendar = (source: 'google' | 'outlook') => {
+    if (source === 'google') {
+      localStorage.removeItem(`google_token_${user.uid}`);
+      setGoogleEvents([]);
+      setGoogleConnected(false);
+    } else {
+      localStorage.removeItem(`outlook_token_${user.uid}`);
+      setOutlookEvents([]);
+      setOutlookConnected(false);
+    }
+  };
 
   // --- STATS ---
   const stats = useMemo(() => {
@@ -589,19 +654,6 @@ export default function Dashboard({ user }: DashboardProps) {
   };
 
   const handleSignOut = async () => { try { await signOut(auth); } catch (error) { console.error("Error signing out", error); } };
-
-  const handleConnectOutlook = () => {
-    // 1. Configuration
-    const CLIENT_ID = "4011de3a-f635-4cfd-96ca-556cc1980fca"; // <--- Paste Azure ID here
-    const REDIRECT_URI = "https://to-do-list-35e.pages.dev/"; 
-    const SCOPES = "Calendars.Read";
-    
-    // 2. Build Auth URL
-    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${REDIRECT_URI}&scope=${SCOPES}`;
-    
-    // 3. Redirect User
-    window.location.href = authUrl; 
-  };
 
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -658,14 +710,17 @@ export default function Dashboard({ user }: DashboardProps) {
         user={user} 
         categories={categories}
         outlookConnected={outlookConnected}
+        googleConnected={googleConnected}
         onConnectOutlook={handleConnectOutlook}
+        onConnectGoogle={handleConnectGoogle}
+        onDisconnectCalendar={handleDisconnectCalendar}
       />
       <EditTaskModal isOpen={!!editTask} onClose={() => setEditTask(null)} todo={editTask} onSave={saveTaskChanges} onDelete={deleteTodo} categories={categories} rotas={rotas} anchorDate={anchorDate} />
 
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v8.0 (Calendars)</span></h1>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v8.1 (Persistent)</span></h1>
           <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
             <Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span>
           </div>
