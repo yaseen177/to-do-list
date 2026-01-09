@@ -79,13 +79,17 @@ const TaskItem = ({
     ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM') 
     : 'Now';
 
+  // Safely handle missing status/priority on old tasks
+  const currentStatus = todo.status || 'todo'; 
+  const currentPriority = todo.priority || 'medium';
+
   return (
     <motion.div 
       layout
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className={`glass-panel p-3 flex flex-col sm:flex-row sm:items-start justify-between group border-l-4 mb-3 ${todo.completed ? 'border-l-slate-600 opacity-60 bg-slate-900/40' : todo.priority === 'high' ? 'border-l-rose-500 shadow-rose-500/10' : 'border-l-indigo-500'}`}
+      className={`glass-panel p-3 flex flex-col sm:flex-row sm:items-start justify-between group border-l-4 mb-3 ${todo.completed ? 'border-l-slate-600 opacity-60 bg-slate-900/40' : currentPriority === 'high' ? 'border-l-rose-500 shadow-rose-500/10' : 'border-l-indigo-500'}`}
     >
       <div className="flex items-start gap-3 w-full">
         {editingId !== todo.id && (
@@ -128,7 +132,7 @@ const TaskItem = ({
             /* READ MODE */
             <div className={`${privacyMode ? 'blur-md hover:blur-none select-none duration-500' : ''}`}>
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                {todo.priority === 'high' && <span className="animate-pulse text-rose-500"><AlertTriangle size={14} /></span>}
+                {currentPriority === 'high' && <span className="animate-pulse text-rose-500"><AlertTriangle size={14} /></span>}
                 {todo.patientName && (
                   <div className="flex items-center gap-1.5 text-indigo-300 font-bold text-sm">
                     <UserIcon size={12} /> {todo.patientName}
@@ -137,17 +141,17 @@ const TaskItem = ({
                 <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-white/5 px-2 py-0.5 rounded">
                   {todo.category}
                 </span>
-                {/* Status Badge */}
+                {/* Status Badge - Now safely handles missing status */}
                 <button 
                   onClick={() => updateStatus(todo)}
                   className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded border ml-auto sm:ml-0 transition ${
-                    todo.status === 'in-progress' ? 'border-sky-500/30 text-sky-400 bg-sky-500/10' :
-                    todo.status === 'waiting' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' :
-                    todo.status === 'done' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' :
+                    currentStatus === 'in-progress' ? 'border-sky-500/30 text-sky-400 bg-sky-500/10' :
+                    currentStatus === 'waiting' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' :
+                    currentStatus === 'done' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' :
                     'border-slate-700 text-slate-500'
                   }`}
                 >
-                  {todo.status.replace('-', ' ')}
+                  {currentStatus.replace('-', ' ')}
                 </button>
               </div>
 
@@ -278,14 +282,18 @@ export default function Dashboard({ user }: DashboardProps) {
     const board = { todo: [] as Todo[], inProgress: [] as Todo[], waiting: [] as Todo[], done: [] as Todo[] };
 
     filtered.forEach(todo => {
+      // Ensure we have fallbacks for status
+      const status = todo.status || 'todo';
+      const isComplete = todo.completed || status === 'done';
+
       // Board buckets
-      if (todo.status === 'done' || todo.completed) board.done.push(todo);
-      else if (todo.status === 'waiting') board.waiting.push(todo);
-      else if (todo.status === 'in-progress') board.inProgress.push(todo);
+      if (isComplete) board.done.push(todo);
+      else if (status === 'waiting') board.waiting.push(todo);
+      else if (status === 'in-progress') board.inProgress.push(todo);
       else board.todo.push(todo);
 
       // List buckets
-      if (todo.completed) { list.completed.push(todo); return; }
+      if (isComplete) { list.completed.push(todo); return; }
       if (!todo.dueDate) { list.later.push(todo); return; }
       const due = parseISO(todo.dueDate);
       if (todo.dueTime) { const [h, m] = todo.dueTime.split(':').map(Number); due.setHours(h, m, 0); } 
@@ -313,7 +321,9 @@ export default function Dashboard({ user }: DashboardProps) {
     const map: Record<string, 'todo' | 'in-progress' | 'waiting' | 'done'> = {
       'todo': 'in-progress', 'in-progress': 'waiting', 'waiting': 'done', 'done': 'todo'
     };
-    const newStatus = map[todo.status || 'todo'];
+    // Safe fallback if status is missing
+    const currentStatus = todo.status || 'todo';
+    const newStatus = map[currentStatus];
     await updateDoc(doc(db, 'todos', todo.id), { 
       status: newStatus, 
       completed: newStatus === 'done' 
