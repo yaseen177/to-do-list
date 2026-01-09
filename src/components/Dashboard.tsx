@@ -20,7 +20,7 @@ interface Todo {
   dueDate: string;
   dueTime: string;
   notes?: string;
-  sentVia?: string; // New: Tracks referral method
+  sentVia?: string;
   createdAt: any; 
 }
 
@@ -235,8 +235,8 @@ const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, outlookExpire
   );
 };
 
-// --- SETTINGS MODAL ---
-const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories, slashCommands, setSlashCommands, referralMethods, setReferralMethods, onSaveAutomation }: any) => {
+// --- SETTINGS MODAL (Fixed Unused Variables) ---
+const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories, slashCommands, referralMethods, onSaveAutomation }: any) => {
   const [activeTab, setActiveTab] = useState<'rota' | 'categories' | 'automation' | 'account'>('rota');
   const [localRotas, setLocalRotas] = useState<RotaSystem>(rotas);
   const [activeWeekIndex, setActiveWeekIndex] = useState(0);
@@ -919,7 +919,7 @@ export default function Dashboard({ user }: DashboardProps) {
 
   return (
     <div className="max-w-6xl mx-auto mt-6 px-4 pb-24 text-slate-100">
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} categories={categories} slashCommands={slashCommands} setSlashCommands={setSlashCommands} referralMethods={referralMethods} setReferralMethods={setReferralMethods} onSaveAutomation={saveAutomationSettings} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} categories={categories} slashCommands={slashCommands} referralMethods={referralMethods} onSaveAutomation={saveAutomationSettings} />
       <EditTaskModal isOpen={!!editTask} onClose={() => setEditTask(null)} todo={editTask} onSave={saveTaskChanges} onDelete={deleteTodo} categories={categories} rotas={rotas} anchorDate={anchorDate} />
       <CalendarManagerModal isOpen={isManagerOpen} onClose={() => setIsManagerOpen(false)} outlookConnected={outlookConnected} outlookExpired={outlookExpired} googleConnected={googleConnected} onConnectOutlook={handleConnectOutlook} onConnectGoogle={handleConnectGoogle} onDisconnect={handleDisconnectCalendar} calendars={externalCalendars} toggleCalendar={toggleCalendar} />
       <ReferralSafetyModal isOpen={isSafetyModalOpen} onClose={() => setIsSafetyModalOpen(false)} onConfirm={confirmReferralCompletion} methods={referralMethods} />
