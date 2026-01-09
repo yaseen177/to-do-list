@@ -235,21 +235,13 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
 const CalendarView = ({ todos, currentDate, setCurrentDate }: any) => {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
-  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 }); // Monday start
+  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
   const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
-  const dateFormat = "d";
-  const rows = [];
-  let days = [];
-  let day = startDate;
-  let formattedDate = "";
-
   const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
   const allDays = eachDayOfInterval({ start: startDate, end: endDate });
 
   return (
     <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl overflow-hidden shadow-xl">
-      {/* Calendar Header */}
       <div className="flex items-center justify-between p-4 bg-slate-800/80 border-b border-slate-700">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-bold text-white">{format(currentDate, "MMMM yyyy")}</h2>
@@ -260,20 +252,14 @@ const CalendarView = ({ todos, currentDate, setCurrentDate }: any) => {
           </div>
         </div>
       </div>
-
-      {/* Weekday Headers */}
       <div className="grid grid-cols-7 bg-slate-800/50 border-b border-slate-700 text-center py-2">
         {weekDays.map(d => <div key={d} className="text-xs font-bold text-slate-500 uppercase tracking-wider">{d}</div>)}
       </div>
-
-      {/* Calendar Grid */}
       <div className="grid grid-cols-7 auto-rows-fr bg-slate-900">
-        {allDays.map((dayItem, i) => {
+        {allDays.map((dayItem) => {
           const dayString = format(dayItem, 'yyyy-MM-dd');
           const isCurrentMonth = isSameMonth(dayItem, monthStart);
           const isToday = isSameDay(dayItem, new Date());
-          
-          // Find tasks for this day
           const daysTasks = todos.filter((t: Todo) => t.dueDate === dayString);
 
           return (
@@ -284,12 +270,10 @@ const CalendarView = ({ todos, currentDate, setCurrentDate }: any) => {
                 </span>
                 {daysTasks.length > 0 && <span className="text-[10px] text-slate-500 font-medium">{daysTasks.length} tasks</span>}
               </div>
-              
               <div className="flex-1 flex flex-col gap-1 mt-1 overflow-y-auto max-h-[80px] scrollbar-hide">
                 {daysTasks.map((t: Todo) => (
                   <div key={t.id} className={`text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 ${t.completed ? 'opacity-40 line-through bg-slate-800 border-slate-600 text-slate-500' : t.priority === 'high' ? 'bg-rose-500/10 border-rose-500 text-rose-300' : t.priority === 'medium' ? 'bg-amber-500/10 border-amber-500 text-amber-300' : 'bg-blue-500/10 border-blue-500 text-blue-300'}`}>
-                    {t.patientName ? <span className="font-bold mr-1">{t.patientName}</span> : null}
-                    {t.text}
+                    {t.patientName ? <span className="font-bold mr-1">{t.patientName}</span> : null}{t.text}
                   </div>
                 ))}
               </div>
@@ -301,7 +285,7 @@ const CalendarView = ({ todos, currentDate, setCurrentDate }: any) => {
   );
 };
 
-// --- TASK ITEM COMPONENT (Unchanged) ---
+// --- TASK ITEM COMPONENT ---
 const TaskItem = ({ 
   todo, now, editingId, editForm, setEditForm, saveEdit, startEditing, deleteTodo, toggleComplete, privacyMode, setEditingId, updateStatus, rotas, anchorDate
 }: any) => {
@@ -388,7 +372,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const [viewMode, setViewMode] = useState<'list' | 'board' | 'calendar'>('list'); 
   const [rotas, setRotas] = useState<RotaSystem>([DEFAULT_WEEK]); 
   const [anchorDate, setAnchorDate] = useState<string>(''); 
-  const [calendarDate, setCalendarDate] = useState(new Date()); // State for calendar nav
+  const [calendarDate, setCalendarDate] = useState(new Date()); 
   
   // Input State
   const [input, setInput] = useState('');
@@ -667,6 +651,7 @@ export default function Dashboard({ user }: DashboardProps) {
                    </button>
                    {isTimeOpen && (
                      <div className="absolute top-full left-0 mt-2 w-[140px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 text-sm font-normal">
+                       <button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2"><Moon size={12}/> End of Day</button>
                        <button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>
                        {TIME_SLOTS.map(t => <button key={t} type="button" onClick={() => { setDueTime(t); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-indigo-500/20 text-slate-300">{t}</button>)}
                      </div>
