@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity } from 'lucide-react';
 import { format, isPast, parseISO, intervalToDuration, addHours, isBefore } from 'date-fns';
 
 // --- TYPES ---
@@ -12,6 +12,8 @@ interface Todo {
   text: string;
   patientName: string;
   completed: boolean;
+  status: 'todo' | 'in-progress' | 'waiting' | 'done';
+  priority: 'low' | 'medium' | 'high';
   uid: string;
   category: string;
   dueDate: string;
@@ -24,8 +26,6 @@ interface DashboardProps {
 }
 
 const QUICK_TEMPLATES = ["Referral:", "GOS18:", "Notes:", "Order:", "Phone:"];
-
-// 🕒 Generate 30-minute slots
 const TIME_SLOTS = Array.from({ length: 23 }).map((_, i) => {
   const totalMinutes = (8 * 60) + (i * 30);
   const h = Math.floor(totalMinutes / 60);
@@ -43,8 +43,7 @@ const getTimeRemaining = (dueDateStr: string, dueTimeStr: string | undefined, no
   } else {
     due.setHours(23, 59, 59);
   }
-
-  if (isPast(due)) return { text: 'Overdue', color: 'text-rose-400' };
+  if (isPast(due)) return { text: 'Overdue', color: 'text-rose-400 font-bold' };
   
   const duration = intervalToDuration({ start: now, end: due });
   const parts = [];
@@ -55,7 +54,6 @@ const getTimeRemaining = (dueDateStr: string, dueTimeStr: string | undefined, no
   const text = parts.slice(0, 2).join(' ') + ' left'; 
   let color = 'text-indigo-300';
   if (!duration.months && !duration.days && duration.hours && duration.hours < 4) color = 'text-amber-400 font-bold';
-  
   return { text, color };
 };
 
@@ -69,18 +67,17 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
   return parts.length > 0 ? parts.join(' ') : 'Just now';
 };
 
-
 // --- ISOLATED TASK ITEM COMPONENT ---
 const TaskItem = ({ 
-  todo, now, editingId, editForm, setEditForm, saveEdit, startEditing, deleteTodo, toggleComplete, privacyMode, setEditingId 
+  todo, now, editingId, editForm, setEditForm, saveEdit, startEditing, deleteTodo, toggleComplete, privacyMode, setEditingId, updateStatus
 }: any) => {
   
   const [isEditTimeOpen, setIsEditTimeOpen] = useState(false);
   const remaining = getTimeRemaining(todo.dueDate, todo.dueTime, now);
   const waiting = getTimeWaiting(todo.createdAt, now);
   const createdStr = todo.createdAt?.seconds 
-    ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM, HH:mm') 
-    : 'Just now';
+    ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM') 
+    : 'Now';
 
   return (
     <motion.div 
@@ -88,17 +85,18 @@ const TaskItem = ({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className={`glass-panel p-4 flex flex-col sm:flex-row sm:items-start justify-between group border-l-4 mb-3 ${todo.completed ? 'border-l-slate-700 opacity-50 bg-slate-900/30' : 'border-l-indigo-500'}`}
+      className={`glass-panel p-3 flex flex-col sm:flex-row sm:items-start justify-between group border-l-4 mb-3 ${todo.completed ? 'border-l-slate-600 opacity-60 bg-slate-900/40' : todo.priority === 'high' ? 'border-l-rose-500 shadow-rose-500/10' : 'border-l-indigo-500'}`}
     >
-      <div className="flex items-start gap-4 w-full">
+      <div className="flex items-start gap-3 w-full">
         {editingId !== todo.id && (
           <button onClick={() => toggleComplete(todo)} className="text-slate-500 hover:text-indigo-400 transition mt-1">
-            {todo.completed ? <CheckCircle2 className="text-emerald-500/80" size={24} /> : <Circle size={24} />}
+            {todo.completed ? <CheckCircle2 className="text-emerald-500/80" size={22} /> : <Circle size={22} />}
           </button>
         )}
         
         <div className="flex-1 min-w-0">
           {editingId === todo.id ? (
+            /* EDIT MODE */
             <div className="flex flex-col gap-2 w-full pr-12">
                 <div className="flex gap-2 relative">
                   <input 
@@ -107,31 +105,13 @@ const TaskItem = ({
                     className="w-1/3 bg-slate-800/50 text-indigo-300 font-bold text-sm p-2 rounded border border-indigo-500/30 focus:outline-none"
                     placeholder="Patient Name"
                   />
-                  
-                  {/* EDIT MODE TIME DROPDOWN */}
                   <div className="relative">
-                    <button 
-                       onClick={() => setIsEditTimeOpen(!isEditTimeOpen)}
-                       className="flex items-center gap-2 bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 hover:bg-slate-700/50 transition w-[100px] justify-between"
-                    >
-                       <div className="flex items-center gap-1">
-                         <Clock size={14} />
-                         {editForm.dueTime || "Time"}
-                       </div>
+                    <button onClick={() => setIsEditTimeOpen(!isEditTimeOpen)} className="flex items-center gap-1 bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 w-[80px] justify-center">
+                       {editForm.dueTime || <Clock size={14}/>}
                     </button>
-                    
                     {isEditTimeOpen && (
-                      <div className="absolute top-full left-0 mt-1 w-[120px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50">
-                         <button onClick={() => { setEditForm({...editForm, dueTime: ''}); setIsEditTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>
-                         {TIME_SLOTS.map(time => (
-                           <button
-                             key={time}
-                             onClick={() => { setEditForm({...editForm, dueTime: time}); setIsEditTimeOpen(false); }}
-                             className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-indigo-500/20 hover:text-indigo-300"
-                           >
-                             {time}
-                           </button>
-                         ))}
+                      <div className="absolute top-full left-0 mt-1 w-[100px] max-h-[150px] overflow-y-auto bg-slate-800 border border-slate-700 rounded z-50">
+                         {TIME_SLOTS.map(t => <button key={t} onClick={()=>{setEditForm({...editForm, dueTime:t}); setIsEditTimeOpen(false)}} className="w-full text-left px-2 py-1 text-xs hover:bg-white/10">{t}</button>)}
                       </div>
                     )}
                   </div>
@@ -145,54 +125,44 @@ const TaskItem = ({
                 />
             </div>
           ) : (
+            /* READ MODE */
             <div className={`${privacyMode ? 'blur-md hover:blur-none select-none duration-500' : ''}`}>
-              <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                {todo.priority === 'high' && <span className="animate-pulse text-rose-500"><AlertTriangle size={14} /></span>}
                 {todo.patientName && (
-                  <div className="flex items-center gap-1.5 text-indigo-400 font-bold text-sm">
-                    <UserIcon size={12} />
-                    {todo.patientName}
+                  <div className="flex items-center gap-1.5 text-indigo-300 font-bold text-sm">
+                    <UserIcon size={12} /> {todo.patientName}
                   </div>
                 )}
                 <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-white/5 px-2 py-0.5 rounded">
                   {todo.category}
                 </span>
+                {/* Status Badge */}
+                <button 
+                  onClick={() => updateStatus(todo)}
+                  className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded border ml-auto sm:ml-0 transition ${
+                    todo.status === 'in-progress' ? 'border-sky-500/30 text-sky-400 bg-sky-500/10' :
+                    todo.status === 'waiting' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' :
+                    todo.status === 'done' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' :
+                    'border-slate-700 text-slate-500'
+                  }`}
+                >
+                  {todo.status.replace('-', ' ')}
+                </button>
               </div>
 
-              <p className={`text-lg transition-all ${todo.completed ? 'line-through decoration-slate-600 text-slate-500' : 'text-slate-200'}`}>
+              <p className={`text-base transition-all ${todo.completed ? 'line-through decoration-slate-600 text-slate-500' : 'text-slate-200'}`}>
                 {todo.text}
               </p>
               
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-y-2 gap-x-6 mt-3 text-xs text-slate-500 border-t border-white/5 pt-2 w-full max-w-[90%]">
-                <div>
-                  <span className="block text-[10px] opacity-60 uppercase tracking-wide">Created</span>
-                  <span className="text-slate-400">{createdStr}</span>
-                </div>
-
-                <div>
-                   <span className="block text-[10px] opacity-60 uppercase tracking-wide">Waiting</span>
-                   <div className="flex items-center gap-1 text-slate-400">
-                     <Hourglass size={10} /> {waiting}
-                   </div>
-                </div>
-
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-500 border-t border-white/5 pt-2 w-full">
+                <span className="text-slate-500 flex items-center gap-1" title="Created"><Clock size={10} /> {createdStr}</span>
+                <span className="text-slate-400 flex items-center gap-1" title="Time Waiting"><Hourglass size={10} /> {waiting}</span>
                 {remaining && !todo.completed && (
-                  <div>
-                    <span className="block text-[10px] opacity-60 uppercase tracking-wide">Remaining</span>
-                    <span className={`font-medium ${remaining.color}`}>
-                      {remaining.text}
-                    </span>
-                  </div>
+                  <span className={`font-medium flex items-center gap-1 ${remaining.color}`}><Target size={10}/> {remaining.text}</span>
                 )}
-                
                 {todo.dueDate && (
-                  <div>
-                    <span className="block text-[10px] opacity-60 uppercase tracking-wide">Due Date</span>
-                    <div className="flex items-center gap-1 text-slate-300">
-                      <Calendar size={10} />
-                      {format(parseISO(todo.dueDate), 'd MMM')}
-                      {todo.dueTime && <span className="text-indigo-300 ml-1"> {todo.dueTime}</span>}
-                    </div>
-                  </div>
+                   <span className="text-slate-300 flex items-center gap-1"><Calendar size={10} /> {format(parseISO(todo.dueDate), 'd MMM')} {todo.dueTime}</span>
                 )}
               </div>
             </div>
@@ -200,16 +170,16 @@ const TaskItem = ({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 absolute top-4 right-4 sm:static sm:ml-4 self-start">
+      <div className="flex items-center gap-2 absolute top-3 right-3 sm:static sm:ml-4 self-start">
         {editingId === todo.id ? (
           <>
-            <button onClick={() => saveEdit(todo.id)} className="text-emerald-400 hover:bg-emerald-400/10 p-2 rounded-lg transition"><Check size={18} /></button>
-            <button onClick={() => setEditingId(null)} className="text-rose-400 hover:bg-rose-400/10 p-2 rounded-lg transition"><X size={18} /></button>
+            <button onClick={() => saveEdit(todo.id)} className="text-emerald-400 hover:bg-emerald-400/10 p-1.5 rounded transition"><Check size={16} /></button>
+            <button onClick={() => setEditingId(null)} className="text-rose-400 hover:bg-rose-400/10 p-1.5 rounded transition"><X size={16} /></button>
           </>
         ) : (
           <>
-            <button onClick={() => startEditing(todo)} className="text-slate-500 hover:text-indigo-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2 hover:bg-white/5 rounded-lg"><Pencil size={18} /></button>
-            <button onClick={() => deleteTodo(todo.id)} className="text-slate-500 hover:text-rose-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2 hover:bg-white/5 rounded-lg"><Trash2 size={18} /></button>
+            <button onClick={() => startEditing(todo)} className="text-slate-500 hover:text-indigo-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 hover:bg-white/5 rounded"><Pencil size={16} /></button>
+            <button onClick={() => deleteTodo(todo.id)} className="text-slate-500 hover:text-rose-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 hover:bg-white/5 rounded"><Trash2 size={16} /></button>
           </>
         )}
       </div>
@@ -217,10 +187,10 @@ const TaskItem = ({
   );
 };
 
-
-// --- MAIN COMPONENT ---
+// --- MAIN DASHBOARD ---
 export default function Dashboard({ user }: DashboardProps) {
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [viewMode, setViewMode] = useState<'list' | 'board'>('list'); 
   
   // Input State
   const [input, setInput] = useState('');
@@ -228,118 +198,105 @@ export default function Dashboard({ user }: DashboardProps) {
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
   const [category, setCategory] = useState('General');
+  const [priority, setPriority] = useState<'low'|'medium'|'high'>('medium');
   const [categories, setCategories] = useState<string[]>(['General']);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Dropdown UI State
+  // Dropdown UI
   const [isCatOpen, setIsCatOpen] = useState(false);
   const [isTimeOpen, setIsTimeOpen] = useState(false);
+  const [isPriorityOpen, setIsPriorityOpen] = useState(false);
 
-  // Time & UI State
+  // General State
   const [now, setNow] = useState(new Date());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ text: '', patientName: '', dueTime: '' });
-  
   const [privacyMode, setPrivacyMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Sections State
-  const [sections, setSections] = useState({
-    overdue: true,
-    soon: true,
-    later: true,
-    completed: false 
-  });
+  const [sections, setSections] = useState({ overdue: true, soon: true, later: true, completed: false });
+  const toggleSection = (key: keyof typeof sections) => setSections(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const toggleSection = (key: keyof typeof sections) => {
-    setSections(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const timeDropdownRef = useRef<HTMLDivElement>(null);
-  const catDropdownRef = useRef<HTMLDivElement>(null);
+  // Refs for click outside
+  const timeRef = useRef<HTMLDivElement>(null);
+  const catRef = useRef<HTMLDivElement>(null);
+  const prioRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (timeDropdownRef.current && !timeDropdownRef.current.contains(event.target as Node)) {
-        setIsTimeOpen(false);
-      }
-      if (catDropdownRef.current && !catDropdownRef.current.contains(event.target as Node)) {
-        setIsCatOpen(false);
-      }
+    const clickOut = (e: MouseEvent) => {
+      if (timeRef.current && !timeRef.current.contains(e.target as Node)) setIsTimeOpen(false);
+      if (catRef.current && !catRef.current.contains(e.target as Node)) setIsCatOpen(false);
+      if (prioRef.current && !prioRef.current.contains(e.target as Node)) setIsPriorityOpen(false);
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("mousedown", clickOut);
+    return () => document.removeEventListener("mousedown", clickOut);
   }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    const unsubCat = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
-      if (docSnap.exists() && docSnap.data().categories) {
-        setCategories(docSnap.data().categories);
-      }
-    });
-
-    const q = query(collection(db, 'todos'), where('uid', '==', user.uid));
-    const unsubTodos = onSnapshot(q, (snapshot) => {
-      let tasks = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Todo));
-      tasks.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    const unsub = onSnapshot(query(collection(db, 'todos'), where('uid', '==', user.uid)), (snap) => {
+      let tasks = snap.docs.map(d => ({ ...d.data(), id: d.id } as Todo));
+      tasks.sort((a, b) => {
+        // High priority first, then dates
+        if (a.priority === 'high' && b.priority !== 'high' && !a.completed) return -1;
+        if (b.priority === 'high' && a.priority !== 'high' && !b.completed) return 1;
+        return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+      });
       setTodos(tasks);
       setIsLoading(false);
     });
-
-    return () => { unsubCat(); unsubTodos(); };
+    // Fetch Categories
+    onSnapshot(doc(db, "users", user.uid), (snap) => {
+      if (snap.exists() && snap.data().categories) setCategories(snap.data().categories);
+    });
+    return () => { clearInterval(timer); unsub(); };
   }, [user]);
+
+  // --- STATS CALCULATION 📊 ---
+  const stats = useMemo(() => {
+    return {
+      total: todos.length,
+      urgent: todos.filter(t => t.priority === 'high' && !t.completed).length,
+      waiting: todos.filter(t => t.status === 'waiting' && !t.completed).length,
+      completedToday: todos.filter(t => t.completed).length 
+    };
+  }, [todos]);
 
   // --- GROUPING LOGIC ---
   const groupedTodos = useMemo(() => {
-    const filtered = todos.filter(todo => 
-      todo.text.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      (todo.patientName && todo.patientName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      todo.category.toLowerCase().includes(searchQuery.toLowerCase())
+    const filtered = todos.filter(t => 
+      t.text.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      (t.patientName && t.patientName.toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
-    const groups = {
-      overdue: [] as Todo[],
-      soon: [] as Todo[],
-      later: [] as Todo[],
-      completed: [] as Todo[]
-    };
-
+    // List View Grouping
+    const list = { overdue: [] as Todo[], soon: [] as Todo[], later: [] as Todo[], completed: [] as Todo[] };
     const next24h = addHours(now, 24);
 
+    // Board View Grouping
+    const board = { todo: [] as Todo[], inProgress: [] as Todo[], waiting: [] as Todo[], done: [] as Todo[] };
+
     filtered.forEach(todo => {
-      if (todo.completed) {
-        groups.completed.push(todo);
-        return;
-      }
+      // Board buckets
+      if (todo.status === 'done' || todo.completed) board.done.push(todo);
+      else if (todo.status === 'waiting') board.waiting.push(todo);
+      else if (todo.status === 'in-progress') board.inProgress.push(todo);
+      else board.todo.push(todo);
 
-      if (!todo.dueDate) {
-        groups.later.push(todo);
-        return;
-      }
-
+      // List buckets
+      if (todo.completed) { list.completed.push(todo); return; }
+      if (!todo.dueDate) { list.later.push(todo); return; }
       const due = parseISO(todo.dueDate);
-      if (todo.dueTime) {
-        const [h, m] = todo.dueTime.split(':').map(Number);
-        due.setHours(h, m, 0);
-      } else {
-        due.setHours(23, 59, 59);
-      }
+      if (todo.dueTime) { const [h, m] = todo.dueTime.split(':').map(Number); due.setHours(h, m, 0); } 
+      else { due.setHours(23, 59, 59); }
 
-      if (isBefore(due, now)) {
-        groups.overdue.push(todo);
-      } else if (isBefore(due, next24h)) {
-        groups.soon.push(todo);
-      } else {
-        groups.later.push(todo);
-      }
+      if (isBefore(due, now)) list.overdue.push(todo);
+      else if (isBefore(due, next24h)) list.soon.push(todo);
+      else list.later.push(todo);
     });
 
-    return groups;
+    return { list, board };
   }, [todos, searchQuery, now]);
 
   // --- ACTIONS ---
@@ -347,82 +304,112 @@ export default function Dashboard({ user }: DashboardProps) {
     e.preventDefault();
     if (!input.trim() && !patientInput.trim()) return;
     await addDoc(collection(db, 'todos'), {
-      text: input, patientName: patientInput, completed: false, uid: user.uid, category, dueDate, dueTime, createdAt: serverTimestamp()
+      text: input, patientName: patientInput, completed: false, status: 'todo', priority, uid: user.uid, category, dueDate, dueTime, createdAt: serverTimestamp()
     });
     setInput(''); setPatientInput(''); setDueDate(''); setDueTime('');
   };
 
+  const updateStatus = async (todo: Todo) => {
+    const map: Record<string, 'todo' | 'in-progress' | 'waiting' | 'done'> = {
+      'todo': 'in-progress', 'in-progress': 'waiting', 'waiting': 'done', 'done': 'todo'
+    };
+    const newStatus = map[todo.status || 'todo'];
+    await updateDoc(doc(db, 'todos', todo.id), { 
+      status: newStatus, 
+      completed: newStatus === 'done' 
+    });
+  };
+
   const toggleComplete = async (todo: Todo) => {
-    await updateDoc(doc(db, 'todos', todo.id), { completed: !todo.completed });
+    const newCompleted = !todo.completed;
+    await updateDoc(doc(db, 'todos', todo.id), { 
+      completed: newCompleted,
+      status: newCompleted ? 'done' : 'todo'
+    });
   };
 
-  const deleteTodo = async (id: string) => {
-    await deleteDoc(doc(db, 'todos', id));
-  };
-
+  const deleteTodo = async (id: string) => deleteDoc(doc(db, 'todos', id));
+  
   const startEditing = (todo: Todo) => {
     setEditingId(todo.id);
     setEditForm({ text: todo.text, patientName: todo.patientName || '', dueTime: todo.dueTime || '' });
   };
-
+  
   const saveEdit = async (id: string) => {
     if (!editForm.text.trim()) return;
-    await updateDoc(doc(db, 'todos', id), { 
-      text: editForm.text, patientName: editForm.patientName, dueTime: editForm.dueTime
-    });
+    await updateDoc(doc(db, 'todos', id), { text: editForm.text, patientName: editForm.patientName, dueTime: editForm.dueTime });
     setEditingId(null);
   };
 
   const setDueToday = () => setDueDate(format(new Date(), 'yyyy-MM-dd'));
 
   return (
-    <div className="max-w-4xl mx-auto mt-8 px-4">
-      <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="max-w-6xl mx-auto mt-6 px-4 pb-24">
+      {/* HEADER */}
+      <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-200 to-white bg-clip-text text-transparent">Clinical Admin</h1>
-          <div className="flex items-center gap-2 text-slate-400 mt-2 text-sm font-medium">
-            <Clock size={16} /><span>{format(now, 'EEEE, do MMMM yyyy - HH:mm')}</span>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">
+            Clinical Admin
+            <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v2.0</span>
+          </h1>
+          <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
+            <Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="relative group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition" size={16} />
-            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Find patient..." className="bg-slate-900/50 border border-slate-700 rounded-full py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-indigo-500 w-[180px] transition-all" />
+          <div className="flex bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
+            <button onClick={() => setViewMode('list')} className={`p-2 rounded transition ${viewMode==='list'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><LayoutTemplate size={18} /></button>
+            <button onClick={() => setViewMode('board')} className={`p-2 rounded transition ${viewMode==='board'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><KanbanSquare size={18} /></button>
           </div>
-          <button onClick={() => setPrivacyMode(!privacyMode)} className={`p-2 rounded-full border transition-all ${privacyMode ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>{privacyMode ? <EyeOff size={20} /> : <Eye size={20} />}</button>
+          <div className="relative group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="bg-slate-800/50 border border-slate-700 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-indigo-500 w-[180px]" />
+          </div>
+          <button onClick={() => setPrivacyMode(!privacyMode)} className={`p-2 rounded-lg border transition ${privacyMode ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>{privacyMode ? <EyeOff size={20} /> : <Eye size={20} />}</button>
         </div>
       </header>
 
-      <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-8 relative z-20">
-        <form onSubmit={addTodo} className="glass-panel p-2 pl-3 flex flex-wrap gap-3 items-center focus-within:ring-1 ring-indigo-500/50 transition-all">
-          <div className="relative group min-w-[140px] max-w-[180px] flex-grow md:flex-grow-0">
-            <UserIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400" />
-            <input type="text" value={patientInput} onChange={(e) => setPatientInput(e.target.value)} className="w-full bg-slate-900/50 border border-transparent focus:border-indigo-500/30 rounded-lg py-2 pl-9 pr-2 text-sm text-slate-200 focus:outline-none transition-all placeholder-slate-600" placeholder="Patient Name" />
+      {/* INPUT FORM */}
+      <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-8 relative z-30">
+        <form onSubmit={addTodo} className="glass-panel p-2 pl-3 flex flex-wrap gap-2 items-center focus-within:ring-1 ring-indigo-500/50 transition-all shadow-lg">
+          <div className="relative group min-w-[120px]">
+            <UserIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input value={patientInput} onChange={(e) => setPatientInput(e.target.value)} className="w-full bg-slate-900/50 border border-transparent focus:border-indigo-500/30 rounded-lg py-2 pl-9 pr-2 text-sm text-slate-200 focus:outline-none placeholder-slate-600" placeholder="Patient" />
           </div>
+          <input value={input} onChange={(e) => setInput(e.target.value)} className="flex-1 bg-transparent border-none focus:outline-none text-base placeholder-slate-600 h-10 text-slate-200 min-w-[160px]" placeholder="New task..." />
           
-          <div className="hidden md:block h-8 w-[1px] bg-white/10"></div>
-          
-          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} className="flex-1 bg-transparent border-none focus:outline-none text-lg placeholder-slate-600 h-10 text-slate-200 min-w-[180px]" placeholder="Task details..." />
-          
-          <div className="flex items-center gap-1 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
-             <button type="button" onClick={setDueToday} className="p-1.5 text-slate-400 hover:text-indigo-300 hover:bg-white/5 rounded-md transition" title="Due Today"><Target size={18} /></button>
-             <div className="w-[1px] h-4 bg-slate-600"></div>
-             <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="bg-transparent text-slate-400 text-sm outline-none cursor-pointer hover:text-white px-2 w-[110px]" />
-             <div className="w-[1px] h-4 bg-slate-600"></div>
-             
-             {/* TIME DROPDOWN */}
-             <div className="relative" ref={timeDropdownRef}>
-               <button type="button" onClick={() => setIsTimeOpen(!isTimeOpen)} className="flex items-center gap-1 bg-transparent text-slate-400 text-sm hover:text-white px-2 py-1 transition min-w-[70px] justify-center"><Clock size={14} /><span>{dueTime || "Time"}</span></button>
+          {/* Priority Selector */}
+          <div className="relative" ref={prioRef}>
+             <button type="button" onClick={() => setIsPriorityOpen(!isPriorityOpen)} className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition border ${priority === 'high' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : priority === 'medium' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+                <Flag size={14} fill={priority === 'high' ? "currentColor" : "none"} />
+             </button>
+             {isPriorityOpen && (
+               <div className="absolute top-full right-0 mt-2 w-[100px] bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50">
+                 {['low', 'medium', 'high'].map(p => (
+                   <button key={p} type="button" onClick={()=>{setPriority(p as any); setIsPriorityOpen(false)}} className={`w-full text-left px-3 py-2 text-xs capitalize hover:bg-white/5 ${p==='high'?'text-rose-400':p==='medium'?'text-amber-400':'text-slate-400'}`}>{p}</button>
+                 ))}
+               </div>
+             )}
+          </div>
+
+          <div className="flex items-center gap-1 bg-slate-900/50 rounded-lg p-1 border border-slate-700/50">
+             <button type="button" onClick={setDueToday} className="p-1.5 text-slate-400 hover:text-indigo-300 hover:bg-white/5 rounded-md" title="Today"><Target size={16} /></button>
+             <div className="w-[1px] h-4 bg-slate-700"></div>
+             <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="bg-transparent text-slate-400 text-sm outline-none cursor-pointer hover:text-white px-2 w-[105px]" />
+             <div className="w-[1px] h-4 bg-slate-700"></div>
+             <div className="relative" ref={timeRef}>
+               <button type="button" onClick={() => setIsTimeOpen(!isTimeOpen)} className="flex items-center gap-1 bg-transparent text-slate-400 text-sm hover:text-white px-2 py-1 min-w-[60px] justify-center"><Clock size={14} /><span>{dueTime || "Time"}</span></button>
                {isTimeOpen && (
                  <div className="absolute top-full right-0 mt-2 w-[100px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50">
-                   <button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>
-                   {TIME_SLOTS.map(time => (<button key={time} type="button" onClick={() => { setDueTime(time); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-indigo-500/20 hover:text-indigo-300">{time}</button>))}
+                   <button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">None</button>
+                   {TIME_SLOTS.map(time => (<button key={time} type="button" onClick={() => { setDueTime(time); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-indigo-500/20">{time}</button>))}
                  </div>
                )}
              </div>
           </div>
-
-          <div className="relative min-w-[120px]" ref={catDropdownRef}>
+          
+          {/* CATEGORY DROPDOWN */}
+          <div className="relative min-w-[120px]" ref={catRef}>
              <button type="button" onClick={() => setIsCatOpen(!isCatOpen)} className="w-full flex items-center justify-between gap-2 bg-slate-800/50 border border-slate-700/50 hover:border-indigo-500/50 px-3 py-2 rounded-lg text-sm text-slate-300 transition"><span className="truncate">{category}</span><ChevronDown size={14} className={`transition-transform ${isCatOpen ? 'rotate-180' : ''}`} /></button>
              {isCatOpen && (
                <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="absolute top-full right-0 mt-2 w-[180px] bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-50 py-1">
@@ -430,67 +417,102 @@ export default function Dashboard({ user }: DashboardProps) {
                </motion.div>
              )}
           </div>
-          <button type="submit" className="bg-indigo-600 w-10 h-10 rounded-lg hover:bg-indigo-500 transition flex items-center justify-center text-white shadow-lg active:scale-90 ml-auto md:ml-0"><Plus size={20} /></button>
+          
+          <button type="submit" className="bg-indigo-600 w-10 h-10 rounded-lg hover:bg-indigo-500 transition flex items-center justify-center text-white shadow-lg active:scale-95 ml-auto"><Plus size={20} /></button>
         </form>
-        <div className="flex gap-2 mt-3 overflow-x-auto pb-2 scrollbar-hide">{QUICK_TEMPLATES.map(tmpl => (<button key={tmpl} onClick={() => setInput(tmpl + ' ')} className="text-xs font-medium bg-slate-800/50 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-300 px-3 py-1.5 rounded-lg border border-slate-700/50 hover:border-indigo-500/30 transition whitespace-nowrap">+ {tmpl}</button>))}</div>
+        {/* QUICK TEMPLATES */}
+        <div className="flex gap-2 mt-3 overflow-x-auto pb-2 scrollbar-hide">
+          {QUICK_TEMPLATES.map(tmpl => (
+            <button key={tmpl} onClick={() => setInput(tmpl + ' ')} className="text-xs font-medium bg-slate-800/50 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-300 px-3 py-1.5 rounded-lg border border-slate-700/50 hover:border-indigo-500/30 transition whitespace-nowrap">+ {tmpl}</button>
+          ))}
+        </div>
       </motion.div>
 
-      <div className="pb-20 relative z-10 space-y-4">
-        {isLoading && <div className="text-center text-slate-500 py-10">Syncing workspace...</div>}
+      {/* --- LIST VIEW --- */}
+      {viewMode === 'list' && (
+        <div className="space-y-4">
+          {isLoading && <div className="text-center text-slate-500 py-10">Loading...</div>}
+          
+          {groupedTodos.list.overdue.length > 0 && (
+            <div className="space-y-2">
+              <button onClick={() => toggleSection('overdue')} className="flex items-center gap-2 text-rose-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">
+                {sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.list.overdue.length})
+              </button>
+              <AnimatePresence>
+                {sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</motion.div>}
+              </AnimatePresence>
+            </div>
+          )}
 
-        {!isLoading && groupedTodos.overdue.length > 0 && (
           <div className="space-y-2">
-            <button onClick={() => toggleSection('overdue')} className="flex items-center gap-2 text-rose-400 font-bold uppercase tracking-wider text-xs w-full hover:bg-white/5 p-2 rounded-lg transition">
-              {sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.overdue.length}) <AlertTriangle size={14} />
+            <button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">
+               {sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Soon ({groupedTodos.list.soon.length})
             </button>
             <AnimatePresence>
-              {sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.overdue.map(todo => <TaskItem key={todo.id} todo={todo} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} />)}</motion.div>}
+              {sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</motion.div>}
             </AnimatePresence>
           </div>
-        )}
 
-        {!isLoading && (
           <div className="space-y-2">
-            <button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-400 font-bold uppercase tracking-wider text-xs w-full hover:bg-white/5 p-2 rounded-lg transition">
-               {sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Within 24 Hours ({groupedTodos.soon.length})
+            <button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-300 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">
+               {sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later ({groupedTodos.list.later.length})
             </button>
             <AnimatePresence>
-              {sections.soon && (
-                <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
-                  {groupedTodos.soon.map(todo => <TaskItem key={todo.id} todo={todo} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} />)}
-                  {groupedTodos.soon.length === 0 && <p className="text-slate-600 text-sm pl-8 py-2 italic">No urgent tasks.</p>}
-                </motion.div>
-              )}
+              {sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</motion.div>}
             </AnimatePresence>
           </div>
-        )}
 
-        {!isLoading && (
-          <div className="space-y-2">
-            <button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-300 font-bold uppercase tracking-wider text-xs w-full hover:bg-white/5 p-2 rounded-lg transition">
-               {sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later / No Date ({groupedTodos.later.length})
-            </button>
-            <AnimatePresence>
-              {sections.later && (
-                <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
-                  {groupedTodos.later.map(todo => <TaskItem key={todo.id} todo={todo} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} />)}
-                  {groupedTodos.later.length === 0 && <p className="text-slate-600 text-sm pl-8 py-2 italic">Nothing for later.</p>}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
+          {groupedTodos.list.completed.length > 0 && (
+            <div className="space-y-2 pt-6 border-t border-white/5">
+              <button onClick={() => toggleSection('completed')} className="flex items-center gap-2 text-slate-500 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">
+                 {sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed ({groupedTodos.list.completed.length})
+              </button>
+              <AnimatePresence>
+                {sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</motion.div>}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      )}
 
-        {!isLoading && groupedTodos.completed.length > 0 && (
-          <div className="space-y-2 pt-6 border-t border-white/5">
-            <button onClick={() => toggleSection('completed')} className="flex items-center gap-2 text-slate-500 font-bold uppercase tracking-wider text-xs w-full hover:bg-white/5 p-2 rounded-lg transition">
-               {sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed ({groupedTodos.completed.length})
-            </button>
-            <AnimatePresence>
-              {sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.completed.map(todo => <TaskItem key={todo.id} todo={todo} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} />)}</motion.div>}
-            </AnimatePresence>
-          </div>
-        )}
+      {/* --- KANBAN VIEW 📋 --- */}
+      {viewMode === 'board' && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 overflow-x-auto pb-4">
+           {/* Column 1: Todo */}
+           <div className="space-y-3">
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Circle size={14} /> To Do ({groupedTodos.board.todo.length})</h3>
+              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.todo.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</div>
+           </div>
+           {/* Column 2: In Progress */}
+           <div className="space-y-3">
+              <h3 className="text-sm font-bold text-sky-400 uppercase tracking-wider flex items-center gap-2"><Activity size={14} /> In Progress ({groupedTodos.board.inProgress.length})</h3>
+              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.inProgress.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</div>
+           </div>
+           {/* Column 3: Waiting */}
+           <div className="space-y-3">
+              <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2"><Hourglass size={14} /> Waiting ({groupedTodos.board.waiting.length})</h3>
+              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</div>
+           </div>
+           {/* Column 4: Done */}
+           <div className="space-y-3">
+              <h3 className="text-sm font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2"><CheckCircle2 size={14} /> Done ({groupedTodos.board.done.length})</h3>
+              <div className="space-y-2 min-h-[200px] opacity-70">{groupedTodos.board.done.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</div>
+           </div>
+        </div>
+      )}
+
+      {/* --- STATS FOOTER 📊 --- */}
+      <div className="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-md border-t border-slate-800 p-3 z-50">
+         <div className="max-w-6xl mx-auto flex items-center justify-between text-xs sm:text-sm text-slate-400">
+            <div className="flex gap-4">
+              <span className="flex items-center gap-1"><LayoutTemplate size={14}/> Total: <strong className="text-white">{stats.total}</strong></span>
+              <span className="flex items-center gap-1 text-rose-400"><Flag size={14}/> Urgent: <strong className="text-rose-300">{stats.urgent}</strong></span>
+              <span className="flex items-center gap-1 text-amber-400"><Hourglass size={14}/> Waiting: <strong className="text-amber-300">{stats.waiting}</strong></span>
+            </div>
+            <div className="flex items-center gap-1 text-emerald-500">
+               <CheckCircle2 size={14} /> Completed Today: <strong className="text-emerald-400">{stats.completedToday}</strong>
+            </div>
+         </div>
       </div>
     </div>
   );

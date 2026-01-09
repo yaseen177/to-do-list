@@ -3,19 +3,27 @@
 @tailwind utilities;
 
 body {
-  background: radial-gradient(circle at top left, #1e1b4b, #0f172a);
-  color: white;
+  @apply bg-slate-900 text-slate-100 font-sans antialiased;
+  /* Lighter, softer blue-grey gradient */
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(222, 47%, 25%, 1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(210, 29%, 24%, 1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(217, 33%, 22%, 1) 0, transparent 50%);
+  background-attachment: fixed;
+  min-height: 100vh;
 }
 
-/* 2026 Glassmorphism Utility */
 .glass-panel {
-  @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl;
+  @apply bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl;
 }
 
-.input-field {
-  @apply w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm;
+/* ... keep the rest of your css ... */
+.glass-input {
+  @apply w-full bg-slate-900/50 border border-slate-700/50 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all text-sm placeholder-slate-500;
 }
-
 .btn-primary {
-  @apply bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-6 rounded-lg transition-all shadow-lg shadow-indigo-500/20 active:scale-95;
+  @apply bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-6 rounded-xl transition-all shadow-lg shadow-indigo-500/20 active:scale-95 flex items-center justify-center gap-2;
 }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
