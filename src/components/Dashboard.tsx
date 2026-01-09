@@ -550,9 +550,16 @@ export default function Dashboard({ user }: DashboardProps) {
   const handleSignOut = async () => { try { await signOut(auth); } catch (error) { console.error("Error signing out", error); } };
 
   const handleConnectOutlook = () => {
-    alert("This feature requires an Azure App Registration. In a production app, this would redirect you to Microsoft login.");
-    setOutlookConnected(true); // Simulate connection
-    setOutlookEvents([]); // Initialize empty events
+    // 1. Configuration
+    const CLIENT_ID = "4011de3a-f635-4cfd-96ca-556cc1980fca"; // <--- Paste Azure ID here
+    const REDIRECT_URI = "https://to-do-list-35e.pages.dev/"; 
+    const SCOPES = "Calendars.Read";
+    
+    // 2. Build Auth URL
+    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${REDIRECT_URI}&scope=${SCOPES}`;
+    
+    // 3. Redirect User
+    window.location.href = authUrl; 
   };
 
   const addTodo = async (e: React.FormEvent) => {
