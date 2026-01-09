@@ -4,6 +4,7 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}"  // <--- The magic fix is adding 'ts' and 'tsx' here
   ],
+  DARKmODE: 'class',
   theme: {
     extend: {
       fontFamily: {
