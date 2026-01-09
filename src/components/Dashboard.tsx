@@ -633,7 +633,7 @@ export default function Dashboard({ user }: DashboardProps) {
     }
   };
 
-  // --- STATS ---
+  // --- STATS --
   const stats = useMemo(() => {
     return {
       total: todos.length,
