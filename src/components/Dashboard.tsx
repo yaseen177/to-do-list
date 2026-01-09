@@ -4,7 +4,7 @@ import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc
 import { signOut, updatePassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar as CalendarIcon, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, ChevronLeft, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Sun, Layers, Globe, Link2, StickyNote, Undo2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar as CalendarIcon, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, ChevronLeft, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Sun, Layers, Globe, Link2, StickyNote, Undo2, AlertCircle, Command, Send } from 'lucide-react';
 import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, differenceInCalendarWeeks, startOfWeek, subWeeks, addDays, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 
 // --- TYPES ---
@@ -20,6 +20,7 @@ interface Todo {
   dueDate: string;
   dueTime: string;
   notes?: string;
+  sentVia?: string; // New: Tracks referral method
   createdAt: any; 
 }
 
@@ -47,6 +48,17 @@ interface ToastMsg {
   undoAction?: () => void;
 }
 
+// New Types for Customization
+interface SlashCommand {
+  trigger: string;
+  expansion: string;
+}
+
+interface ReferralMethod {
+  id: string;
+  label: string;
+}
+
 type DaySchedule = { start: string; end: string; isOff: boolean };
 type WeeklySchedule = Record<string, DaySchedule>;
 type RotaSystem = WeeklySchedule[]; 
@@ -58,6 +70,23 @@ const DEFAULT_WEEK: WeeklySchedule = {
   saturday: { start: '09:00', end: '13:00', isOff: false },
   sunday: { start: '00:00', end: '00:00', isOff: true },
 };
+
+// DEFAULTS
+const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
+  { trigger: '/vf', expansion: 'Visual Fields Check' },
+  { trigger: '/oct', expansion: 'OCT Scan Review' },
+  { trigger: '/cl', expansion: 'Contact Lens Teach' },
+  { trigger: '/dil', expansion: 'Dilated Fundus Exam' },
+  { trigger: '/cat', expansion: 'Cataract Referral' }
+];
+
+const DEFAULT_REFERRAL_METHODS: ReferralMethod[] = [
+  { id: 'egos', label: 'e-GOS (Portal)' },
+  { id: 'email', label: 'NHS Email' },
+  { id: 'post', label: 'Post (Tracked)' },
+  { id: 'urgent', label: 'Urgent Referral (Fax/Phone)' },
+  { id: 'pat', label: 'Given to Patient' }
+];
 
 interface DashboardProps {
   user: User;
@@ -100,7 +129,7 @@ const getTimeRemaining = (dueDateStr: string, dueTimeStr: string | undefined, no
   } else {
     due.setHours(23, 59, 59);
   }
-  if (isPast(due)) return { text: 'Overdue', color: 'text-rose-400 font-bold' };
+  if (isPast(due)) return { text: 'Overdue', color: 'text-rose-500 font-bold' };
   const duration = intervalToDuration({ start: now, end: due });
   const parts = [];
   if (duration.days) parts.push(`${duration.days}d`);
@@ -119,6 +148,34 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
   if (duration.days) parts.push(`${duration.days}d`);
   if (duration.hours) parts.push(`${duration.hours}h`);
   return parts.length > 0 ? parts.join(' ') : 'Just now';
+};
+
+// --- REFERRAL SAFETY NET MODAL ---
+const ReferralSafetyModal = ({ isOpen, onClose, onConfirm, methods }: any) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-slate-900 border-2 border-rose-500 w-full max-w-sm rounded-2xl shadow-2xl p-6 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-rose-500 animate-pulse"></div>
+        <div className="flex flex-col items-center text-center mb-6">
+          <div className="w-12 h-12 bg-rose-500/20 text-rose-500 rounded-full flex items-center justify-center mb-3">
+            <ShieldCheck size={28} />
+          </div>
+          <h2 className="text-xl font-bold text-white">Referral Safety Net</h2>
+          <p className="text-sm text-slate-400 mt-2">You are closing a Referral task. How was this referral sent?</p>
+        </div>
+        <div className="space-y-2">
+          {methods.map((method: ReferralMethod) => (
+            <button key={method.id} onClick={() => onConfirm(method.label)} className="w-full p-3 bg-slate-800 hover:bg-slate-700 text-left rounded-xl flex items-center justify-between group transition-colors">
+              <span className="text-slate-200 font-medium group-hover:text-white">{method.label}</span>
+              <Send size={16} className="text-slate-500 group-hover:text-indigo-400"/>
+            </button>
+          ))}
+        </div>
+        <button onClick={onClose} className="w-full mt-4 py-2 text-sm text-slate-500 hover:text-slate-300">Cancel (Don't Close)</button>
+      </motion.div>
+    </div>
+  );
 };
 
 // --- CALENDAR MANAGER MODAL ---
@@ -143,7 +200,7 @@ const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, outlookExpire
              {googleConnected && (
                <div className="bg-slate-800/50 rounded-lg p-2 space-y-1">
                   <div className="text-[10px] text-slate-500 uppercase font-bold px-2">Sub-Calendars</div>
-                  <div className="flex items-center gap-2 p-2 hover:bg-white/5 rounded cursor-not-allowed opacity-70"><CheckCircle2 size={14} className="text-emerald-500"/><span className="text-xs text-slate-300">Primary Calendar</span></div>
+                  <div className="flex items-center gap-2 p-2 rounded cursor-not-allowed opacity-70"><CheckCircle2 size={14} className="text-emerald-500"/><span className="text-xs text-slate-300">Primary Calendar</span></div>
                </div>
              )}
           </div>
@@ -179,13 +236,21 @@ const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, outlookExpire
 };
 
 // --- SETTINGS MODAL ---
-const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories }: any) => {
-  const [activeTab, setActiveTab] = useState<'rota' | 'categories' | 'account'>('rota');
+const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories, slashCommands, setSlashCommands, referralMethods, setReferralMethods, onSaveAutomation }: any) => {
+  const [activeTab, setActiveTab] = useState<'rota' | 'categories' | 'automation' | 'account'>('rota');
   const [localRotas, setLocalRotas] = useState<RotaSystem>(rotas);
   const [activeWeekIndex, setActiveWeekIndex] = useState(0);
   const [currentWeekSelection, setCurrentWeekSelection] = useState(0);
   const [localCategories, setLocalCategories] = useState<string[]>(categories || []);
   const [newCat, setNewCat] = useState('');
+  
+  // Automation State
+  const [localSlash, setLocalSlash] = useState<SlashCommand[]>(slashCommands || []);
+  const [localReferral, setLocalReferral] = useState<ReferralMethod[]>(referralMethods || []);
+  const [newTrig, setNewTrig] = useState('');
+  const [newExp, setNewExp] = useState('');
+  const [newRefMethod, setNewRefMethod] = useState('');
+
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -195,16 +260,19 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
   useEffect(() => {
     if (rotas) setLocalRotas(rotas);
     if (categories) setLocalCategories(categories);
+    if (slashCommands) setLocalSlash(slashCommands);
+    if (referralMethods) setLocalReferral(referralMethods);
     if (anchorDate && rotas.length > 0) {
         const anchor = parseISO(anchorDate);
         const weeksPassed = differenceInCalendarWeeks(new Date(), anchor, { weekStartsOn: 1 });
         const currentIndex = ((weeksPassed % rotas.length) + rotas.length) % rotas.length;
         setCurrentWeekSelection(currentIndex);
     }
-  }, [rotas, anchorDate, categories]);
+  }, [rotas, anchorDate, categories, slashCommands, referralMethods]);
 
   if (!isOpen) return null;
 
+  // HANDLERS
   const handleRotaChange = (day: string, field: keyof DaySchedule, value: any) => { const updatedRotas = [...localRotas]; updatedRotas[activeWeekIndex] = { ...updatedRotas[activeWeekIndex], [day]: { ...updatedRotas[activeWeekIndex][day], [field]: value } }; setLocalRotas(updatedRotas); };
   const addWeek = () => { setLocalRotas([...localRotas, JSON.parse(JSON.stringify(DEFAULT_WEEK))]); setActiveWeekIndex(localRotas.length); };
   const removeWeek = (index: number) => { if(localRotas.length<=1)return; setLocalRotas(localRotas.filter((_,i)=>i!==index)); setActiveWeekIndex(0); };
@@ -214,6 +282,28 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
   const handleSaveCategories = async () => { setSaveStatus('saving'); try { await setDoc(doc(db, "users", user.uid), { categories: localCategories }, { merge: true }); setSaveStatus('success'); setTimeout(() => { setSaveStatus('idle'); onClose(); }, 1000); } catch (e) { console.error(e); setSaveStatus('idle'); } };
   const handleUpdatePassword = async () => { if (newPassword.length < 8) { setPasswordMsg({ text: 'Password too short', type: 'error' }); return; } if (newPassword !== confirmPassword) { setPasswordMsg({ text: 'Passwords do not match', type: 'error' }); return; } try { if (user) { await updatePassword(user, newPassword); setPasswordMsg({ text: 'Password updated!', type: 'success' }); setNewPassword(''); setConfirmPassword(''); } } catch (err: any) { setPasswordMsg({ text: err.message, type: 'error' }); } };
 
+  // AUTOMATION HANDLERS
+  const addSlash = () => {
+    if(newTrig && newExp) {
+      setLocalSlash([...localSlash, { trigger: newTrig.startsWith('/') ? newTrig : `/${newTrig}`, expansion: newExp }]);
+      setNewTrig(''); setNewExp('');
+    }
+  };
+  const removeSlash = (t: string) => setLocalSlash(localSlash.filter(s => s.trigger !== t));
+  
+  const addRefMethod = () => {
+    if(newRefMethod) {
+      setLocalReferral([...localReferral, { id: newRefMethod.toLowerCase().replace(/\s/g, ''), label: newRefMethod }]);
+      setNewRefMethod('');
+    }
+  };
+  const removeRefMethod = (id: string) => setLocalReferral(localReferral.filter(r => r.id !== id));
+
+  const saveAutomation = () => {
+    onSaveAutomation(localSlash, localReferral);
+    onClose();
+  };
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -222,15 +312,15 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
         </div>
         <div className="flex border-b border-slate-800">
-          <button onClick={() => setActiveTab('rota')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'rota' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Rota</button>
-          <button onClick={() => setActiveTab('categories')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'categories' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Categories</button>
-          <button onClick={() => setActiveTab('account')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'account' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Account</button>
+          {['rota', 'categories', 'automation', 'account'].map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab as any)} className={`flex-1 py-3 text-sm font-medium transition capitalize ${activeTab === tab ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:bg-slate-800'}`}>{tab}</button>
+          ))}
         </div>
         
         {activeTab === 'rota' && (
           <>
             <div className="bg-indigo-500/10 border-b border-indigo-500/20 p-4"><div className="flex items-center justify-between mb-2"><span className="text-sm font-bold text-indigo-200 flex items-center gap-2"><RefreshCw size={14}/> Sync Current Week</span><span className="text-xs text-indigo-300/60">{format(new Date(), 'd MMM')}</span></div><div className="flex items-center gap-3"><span className="text-sm text-slate-300">This week is:</span><div className="relative flex-1"><select value={currentWeekSelection} onChange={(e) => setCurrentWeekSelection(Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 appearance-none cursor-pointer focus:border-indigo-500 focus:outline-none">{localRotas.map((_, idx) => (<option key={idx} value={idx}>Week {idx + 1}</option>))}</select><ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" /></div></div></div>
-            <div className="flex items-center gap-2 px-6 pt-4 pb-2 overflow-x-auto scrollbar-hide">{localRotas.map((_, idx) => (<div key={idx} className="flex items-center"><button onClick={() => setActiveWeekIndex(idx)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${activeWeekIndex === idx ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Week {idx + 1}</button>{localRotas.length > 1 && activeWeekIndex === idx && <button onClick={() => removeWeek(idx)} className="ml-1 p-1 text-rose-400 hover:bg-rose-500/10 rounded-full"><X size={12} /></button>}</div>))}<button onClick={addWeek} className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-indigo-500 transition"><Plus size={14} /></button></div>
+            <div className="flex items-center gap-2 px-6 pt-4 pb-2 overflow-x-auto scrollbar-hide">{localRotas.map((_, idx) => (<div key={idx} className="flex items-center"><button onClick={() => setActiveWeekIndex(idx)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${activeWeekIndex === idx ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Week {idx + 1}</button>{localRotas.length > 1 && activeWeekIndex === idx && <button onClick={() => removeWeek(idx)} className="ml-1 p-1 text-rose-400 hover:bg-rose-500/10 rounded-full"><X size={12} /></button>}</div>))}<button onClick={addWeek} className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:border-indigo-500 transition"><Plus size={14} /></button></div>
             <div className="p-6 space-y-4 overflow-y-auto flex-1">{['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => { const dayData = (localRotas[activeWeekIndex] || DEFAULT_WEEK)[day] || DEFAULT_WEEK.monday; return (<div key={day} className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50"><div className="w-24 capitalize text-sm font-medium text-slate-200">{day}</div>{!dayData.isOff ? (<><input type="time" value={dayData.start} onChange={(e) => handleRotaChange(day, 'start', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" /><span className="text-slate-500">-</span><input type="time" value={dayData.end} onChange={(e) => handleRotaChange(day, 'end', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" /></>) : <span className="flex-1 text-center text-xs text-slate-500 uppercase tracking-wider font-bold">Day Off</span>}<button onClick={() => handleRotaChange(day, 'isOff', !dayData.isOff)} className={`px-3 py-1 rounded text-xs font-bold transition ${dayData.isOff ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}>{dayData.isOff ? 'OFF' : 'ON'}</button></div>); })}</div>
             <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button><button onClick={handleSaveRota} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2"><Save size={16} /> Save Rota</button></div>
           </>
@@ -239,6 +329,53 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
         {activeTab === 'categories' && (
           <>
             <div className="flex-1 flex flex-col min-h-0"><div className="p-6 space-y-6 overflow-y-auto flex-1"><div className="flex gap-2"><input value={newCat} onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()} placeholder="New Category Name..." className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:border-indigo-500 outline-none"/><button onClick={handleAddCategory} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg"><Plus size={20}/></button></div><div className="space-y-2">{localCategories.map(cat => (<div key={cat} className="flex items-center justify-between p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg group"><span className="text-slate-200 text-sm font-medium">{cat}</span><button onClick={() => handleRemoveCategory(cat)} className="text-slate-500 hover:text-rose-400 transition opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button></div>))}{localCategories.length === 0 && <div className="text-center text-slate-500 text-sm py-4">No categories set.</div>}</div></div></div><div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Close</button><button onClick={handleSaveCategories} disabled={saveStatus !== 'idle'} className={`px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${saveStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>{saveStatus === 'saving' ? <>Saving...</> : saveStatus === 'success' ? <><Check size={16}/> Saved!</> : <><Save size={16}/> Save Categories</>}</button></div>
+          </>
+        )}
+
+        {/* --- AUTOMATION TAB (NEW) --- */}
+        {activeTab === 'automation' && (
+          <>
+            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-6 space-y-8">
+               {/* SLASH COMMANDS */}
+               <div>
+                 <h3 className="text-indigo-400 font-bold flex items-center gap-2 mb-3 text-sm uppercase tracking-wider"><Command size={16}/> Slash Commands</h3>
+                 <div className="flex gap-2 mb-3">
+                    <input value={newTrig} onChange={(e) => setNewTrig(e.target.value)} placeholder="/vf" className="w-20 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"/>
+                    <input value={newExp} onChange={(e) => setNewExp(e.target.value)} placeholder="Visual Fields Check" className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"/>
+                    <button onClick={addSlash} className="bg-indigo-600 text-white px-3 rounded-lg"><Plus size={16}/></button>
+                 </div>
+                 <div className="space-y-1">
+                    {localSlash.map(s => (
+                      <div key={s.trigger} className="flex justify-between items-center p-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                         <div className="text-xs text-slate-300"><span className="font-mono text-indigo-400 font-bold">{s.trigger}</span> &rarr; {s.expansion}</div>
+                         <button onClick={() => removeSlash(s.trigger)} className="text-slate-500 hover:text-rose-400"><X size={14}/></button>
+                      </div>
+                    ))}
+                 </div>
+               </div>
+
+               {/* REFERRAL SAFETY NET */}
+               <div>
+                 <h3 className="text-rose-400 font-bold flex items-center gap-2 mb-3 text-sm uppercase tracking-wider"><ShieldCheck size={16}/> Referral Safety Net</h3>
+                 <p className="text-xs text-slate-500 mb-3">When you complete a task in category "Referral", you will be asked to confirm one of these delivery methods.</p>
+                 <div className="flex gap-2 mb-3">
+                    <input value={newRefMethod} onChange={(e) => setNewRefMethod(e.target.value)} placeholder="New Method (e.g. Courier)" className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"/>
+                    <button onClick={addRefMethod} className="bg-indigo-600 text-white px-3 rounded-lg"><Plus size={16}/></button>
+                 </div>
+                 <div className="space-y-1">
+                    {localReferral.map(r => (
+                      <div key={r.id} className="flex justify-between items-center p-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                         <span className="text-xs text-slate-300">{r.label}</span>
+                         <button onClick={() => removeRefMethod(r.id)} className="text-slate-500 hover:text-rose-400"><X size={14}/></button>
+                      </div>
+                    ))}
+                 </div>
+               </div>
+            </div>
+            <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0">
+               <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+               <button onClick={saveAutomation} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium">Save Changes</button>
+            </div>
           </>
         )}
 
@@ -351,11 +488,11 @@ const TaskItem = ({ todo, now, onEdit, deleteTodo, toggleComplete, privacyMode, 
       exit={{ opacity: 0, scale: 0.95 }} 
       className={`glass-panel p-3 flex flex-col sm:flex-row sm:items-start justify-between group border-l-4 mb-3 rounded-lg shadow-sm backdrop-blur-md transition-all cursor-grab active:cursor-grabbing ${
         todo.completed 
-          ? 'border-l-slate-600 opacity-60 bg-slate-900/40' 
+          ? 'border-l-slate-400 bg-slate-900/40 opacity-60' 
           : currentPriority === 'high' 
-            ? 'border-l-rose-500 shadow-rose-500/10' 
-            : 'border-l-indigo-500'
-      } border border-slate-700/50 bg-slate-900/40`}
+            ? 'border-l-rose-500 bg-slate-900/40 shadow-rose-500/10' 
+            : 'border-l-indigo-500 bg-slate-900/40'
+      } border border-slate-700/50`}
     >
       <div className="flex items-start gap-3 w-full">
         <button onClick={() => toggleComplete(todo)} className="text-slate-500 hover:text-indigo-400 transition mt-1">
@@ -368,6 +505,7 @@ const TaskItem = ({ todo, now, onEdit, deleteTodo, toggleComplete, privacyMode, 
                 {todo.patientName && <div className="flex items-center gap-1.5 text-indigo-300 font-bold text-sm"><UserIcon size={12} /> {todo.patientName}</div>}
                 <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-white/5 px-2 py-0.5 rounded">{todo.category}</span>
                 {todo.notes && <span className="text-slate-400" title="Has notes"><StickyNote size={12}/></span>}
+                {todo.sentVia && <span className="text-[10px] text-emerald-400 border border-emerald-500/30 px-1.5 rounded flex items-center gap-1"><Send size={8}/> {todo.sentVia}</span>}
                 <button onClick={() => updateStatus(todo)} className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded border ml-auto sm:ml-0 transition ${currentStatus === 'in-progress' ? 'border-sky-500/30 text-sky-400 bg-sky-500/10' : currentStatus === 'waiting' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' : currentStatus === 'done' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' : 'border-slate-700 text-slate-500'}`}>{currentStatus.replace('-', ' ')}</button>
               </div>
               <p className={`text-base transition-all ${todo.completed ? 'line-through decoration-slate-600 text-slate-500' : 'text-slate-200'}`}>{todo.text}</p>
@@ -444,6 +582,14 @@ export default function Dashboard({ user }: DashboardProps) {
   const [isManagerOpen, setIsManagerOpen] = useState(false);
   const [editTask, setEditTask] = useState<Todo | null>(null);
   
+  // CUSTOMIZATION STATE (New)
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>(DEFAULT_SLASH_COMMANDS);
+  const [referralMethods, setReferralMethods] = useState<ReferralMethod[]>(DEFAULT_REFERRAL_METHODS);
+  
+  // SAFETY NET STATE
+  const [isSafetyModalOpen, setIsSafetyModalOpen] = useState(false);
+  const [taskToComplete, setTaskToComplete] = useState<Todo | null>(null);
+
   // TOAST STATE
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
 
@@ -507,13 +653,41 @@ export default function Dashboard({ user }: DashboardProps) {
         if (data.rotas) setRotas(data.rotas); 
         else if (data.schedule) setRotas([data.schedule]);
         if (data.anchorDate) setAnchorDate(data.anchorDate);
+        if (data.slashCommands) setSlashCommands(data.slashCommands);
+        if (data.referralMethods) setReferralMethods(data.referralMethods);
       }
     });
 
     return () => { clearInterval(timer); unsub(); };
   }, [user]);
 
-  // --- CALENDAR INTEGRATION LOGIC ---
+  // --- SAVE AUTOMATION SETTINGS ---
+  const saveAutomationSettings = async (newSlash: SlashCommand[], newRef: ReferralMethod[]) => {
+    setSlashCommands(newSlash);
+    setReferralMethods(newRef);
+    await setDoc(doc(db, "users", user.uid), { slashCommands: newSlash, referralMethods: newRef }, { merge: true });
+  };
+
+  // --- SLASH COMMAND INPUT HANDLER ---
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    // Check if the last char is a space
+    if (val.endsWith(' ')) {
+      const words = val.trim().split(' ');
+      const lastWord = words[words.length - 1];
+      // Try to find a match
+      const match = slashCommands.find(sc => sc.trigger === lastWord);
+      if (match) {
+        // Replace trigger with expansion
+        const newVal = val.slice(0, -(lastWord.length + 1)) + match.expansion + ' ';
+        setInput(newVal);
+        return;
+      }
+    }
+    setInput(val);
+  };
+
+  // --- CALENDAR LOGIC (Standard) ---
   const loadGoogleEvents = async (token: string) => {
     const start = startOfMonth(new Date()).toISOString();
     const end = endOfMonth(new Date()).toISOString();
@@ -523,30 +697,17 @@ export default function Dashboard({ user }: DashboardProps) {
       });
       if (res.ok) {
         const data = await res.json();
-        const events = (data.items || []).map((e: any) => ({
-          id: e.id,
-          title: e.summary || 'Busy',
-          start: new Date(e.start.dateTime || e.start.date),
-          end: new Date(e.end.dateTime || e.end.date),
-          source: 'google',
-          color: 'emerald'
-        }));
+        const events = (data.items || []).map((e: any) => ({ id: e.id, title: e.summary || 'Busy', start: new Date(e.start.dateTime || e.start.date), end: new Date(e.end.dateTime || e.end.date), source: 'google', color: 'emerald' }));
         setGoogleEvents(events);
         setGoogleConnected(true);
       }
-    } catch (err) { console.error("Google Fetch Error", err); }
+    } catch (err) { console.error(err); }
   };
 
   const loadOutlookData = async (token: string) => {
     try {
       const calRes = await fetch("https://graph.microsoft.com/v1.0/me/calendars", { headers: { Authorization: `Bearer ${token}` } });
-      if (!calRes.ok) {
-        if (calRes.status === 401) {
-          setOutlookConnected(true); 
-          setOutlookExpired(true);
-        }
-        return;
-      }
+      if (!calRes.ok) { if (calRes.status === 401) { setOutlookConnected(true); setOutlookExpired(true); } return; }
       setOutlookExpired(false);
       const calData = await calRes.json();
       if (calData.value) {
@@ -556,10 +717,7 @@ export default function Dashboard({ user }: DashboardProps) {
            const wasActive = savedState.find((s:any) => s.id === c.id)?.isActive;
            return { id: c.id, name: c.name, source: 'outlook', isActive: wasActive !== undefined ? wasActive : c.isDefaultCalendar };
         });
-        setExternalCalendars(prev => {
-           const google = prev.filter(p => p.source === 'google');
-           return [...google, ...mergedCalendars];
-        });
+        setExternalCalendars(prev => { const google = prev.filter(p => p.source === 'google'); return [...google, ...mergedCalendars]; });
         setOutlookConnected(true);
         const activeIds = mergedCalendars.filter((c:any) => c.isActive).map((c:any) => c.id);
         const allEvents: CalendarEvent[] = [];
@@ -567,21 +725,13 @@ export default function Dashboard({ user }: DashboardProps) {
            const eventRes = await fetch(`https://graph.microsoft.com/v1.0/me/calendars/${calId}/events`, { headers: { Authorization: `Bearer ${token}` } });
            const eventData = await eventRes.json();
            if (eventData.value) {
-              const events = eventData.value.map((e: any) => ({
-                id: e.id,
-                title: e.subject,
-                start: new Date(e.start.dateTime),
-                end: new Date(e.end.dateTime),
-                source: 'outlook',
-                color: 'sky',
-                calendarName: mergedCalendars.find((c:any) => c.id === calId)?.name
-              }));
+              const events = eventData.value.map((e: any) => ({ id: e.id, title: e.subject, start: new Date(e.start.dateTime), end: new Date(e.end.dateTime), source: 'outlook', color: 'sky', calendarName: mergedCalendars.find((c:any) => c.id === calId)?.name }));
               allEvents.push(...events);
            }
         }
         setOutlookEvents(allEvents);
       }
-    } catch (err) { console.error("Outlook API Error", err); }
+    } catch (err) { console.error(err); }
   };
 
   useEffect(() => {
@@ -590,12 +740,7 @@ export default function Dashboard({ user }: DashboardProps) {
     const outlookIntent = localStorage.getItem(`outlook_connected_${user.uid}`);
     if (outlookIntent === 'true') {
         const oToken = localStorage.getItem(`outlook_token_${user.uid}`);
-        if (oToken) {
-            loadOutlookData(oToken);
-        } else {
-            setOutlookConnected(true);
-            setOutlookExpired(true);
-        }
+        if (oToken) { loadOutlookData(oToken); } else { setOutlookConnected(true); setOutlookExpired(true); }
     }
     if (window.location.hash.includes("access_token")) {
       const token = new URLSearchParams(window.location.hash.substring(1)).get("access_token");
@@ -626,10 +771,7 @@ export default function Dashboard({ user }: DashboardProps) {
       const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       const token = credential?.accessToken;
-      if (token) {
-        localStorage.setItem(`google_token_${user.uid}`, token);
-        loadGoogleEvents(token);
-      }
+      if (token) { localStorage.setItem(`google_token_${user.uid}`, token); loadGoogleEvents(token); }
     } catch (error: any) { alert(`Connection failed: ${error.message}`); }
   };
 
@@ -642,21 +784,13 @@ export default function Dashboard({ user }: DashboardProps) {
 
   const handleDisconnectCalendar = (source: 'google' | 'outlook') => {
     if (source === 'google') {
-      localStorage.removeItem(`google_token_${user.uid}`);
-      setGoogleEvents([]);
-      setGoogleConnected(false);
+      localStorage.removeItem(`google_token_${user.uid}`); setGoogleEvents([]); setGoogleConnected(false);
     } else {
-      localStorage.removeItem(`outlook_token_${user.uid}`);
-      localStorage.removeItem(`outlook_connected_${user.uid}`);
-      localStorage.removeItem(`outlook_calendars_${user.uid}`);
-      setOutlookEvents([]);
-      setOutlookConnected(false);
-      setOutlookExpired(false);
-      setExternalCalendars(prev => prev.filter(c => c.source !== 'outlook'));
+      localStorage.removeItem(`outlook_token_${user.uid}`); localStorage.removeItem(`outlook_connected_${user.uid}`); localStorage.removeItem(`outlook_calendars_${user.uid}`);
+      setOutlookEvents([]); setOutlookConnected(false); setOutlookExpired(false); setExternalCalendars(prev => prev.filter(c => c.source !== 'outlook'));
     }
   };
 
-  // --- STATS & GROUPING ---
   const stats = useMemo(() => {
     return {
       total: todos.length,
@@ -668,11 +802,7 @@ export default function Dashboard({ user }: DashboardProps) {
 
   const categoryStats = useMemo(() => {
     const counts: Record<string, number> = {};
-    todos.forEach(t => {
-      if (!t.completed && t.status !== 'done') {
-        counts[t.category] = (counts[t.category] || 0) + 1;
-      }
-    });
+    todos.forEach(t => { if (!t.completed && t.status !== 'done') { counts[t.category] = (counts[t.category] || 0) + 1; } });
     return counts;
   }, [todos]);
 
@@ -703,104 +833,102 @@ export default function Dashboard({ user }: DashboardProps) {
     return { list, board };
   }, [todos, searchQuery, now]);
 
-  // --- ACTIONS ---
-  const saveRotas = async (newRotas: RotaSystem, newAnchorDate: string) => {
-    await setDoc(doc(db, "users", user.uid), { rotas: newRotas, anchorDate: newAnchorDate }, { merge: true });
-    setIsSettingsOpen(false);
-  };
-
+  const saveRotas = async (newRotas: RotaSystem, newAnchorDate: string) => { await setDoc(doc(db, "users", user.uid), { rotas: newRotas, anchorDate: newAnchorDate }, { merge: true }); setIsSettingsOpen(false); };
   const handleSignOut = async () => { try { await signOut(auth); } catch (error) { console.error("Error signing out", error); } };
 
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() && !patientInput.trim()) return;
-    await addDoc(collection(db, 'todos'), {
-      text: input, patientName: patientInput, completed: false, status: 'todo', priority, uid: user.uid, category, dueDate, dueTime, createdAt: serverTimestamp()
-    });
+    await addDoc(collection(db, 'todos'), { text: input, patientName: patientInput, completed: false, status: 'todo', priority, uid: user.uid, category, dueDate, dueTime, createdAt: serverTimestamp() });
     setInput(''); setPatientInput(''); setDueDate(''); setDueTime('');
   };
 
   const updateStatus = async (todo: Todo) => {
     const map: Record<string, 'todo' | 'in-progress' | 'waiting' | 'done'> = { 'todo': 'in-progress', 'in-progress': 'waiting', 'waiting': 'done', 'done': 'todo' };
     const newStatus = map[todo.status || 'todo'];
+    
+    // SAFETY NET CHECK
+    if (newStatus === 'done' && (todo.category === 'Referral' || todo.category === 'Referrals')) {
+      setTaskToComplete(todo);
+      setIsSafetyModalOpen(true);
+      return;
+    }
+
     await updateDoc(doc(db, 'todos', todo.id), { status: newStatus, completed: newStatus === 'done' });
   };
 
   const toggleComplete = async (todo: Todo) => {
     const newCompleted = !todo.completed;
+    
+    // SAFETY NET CHECK
+    if (newCompleted && (todo.category === 'Referral' || todo.category === 'Referrals')) {
+      setTaskToComplete(todo);
+      setIsSafetyModalOpen(true);
+      return;
+    }
+
     await updateDoc(doc(db, 'todos', todo.id), { completed: newCompleted, status: newCompleted ? 'done' : 'todo' });
   };
 
-  // --- TOAST + UNDO LOGIC ---
+  const confirmReferralCompletion = async (method: string) => {
+    if (taskToComplete) {
+      await updateDoc(doc(db, 'todos', taskToComplete.id), { 
+        status: 'done', 
+        completed: true,
+        sentVia: method
+      });
+      addToast(`Referral marked sent via ${method}`, "success");
+      setIsSafetyModalOpen(false);
+      setTaskToComplete(null);
+    }
+  };
+
   const addToast = (message: string, type: ToastMsg['type'], undoAction?: () => void) => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, message, type, undoAction }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 5000);
+    setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 5000);
   };
 
   const deleteTodo = async (id: string) => {
     const taskToDelete = todos.find(t => t.id === id);
     if (!taskToDelete) return;
-    
     await deleteDoc(doc(db, 'todos', id));
-    
-    addToast("Task deleted", "info", async () => {
-      await setDoc(doc(db, 'todos', id), taskToDelete);
-      addToast("Task restored", "success");
-    });
+    addToast("Task deleted", "info", async () => { await setDoc(doc(db, 'todos', id), taskToDelete); addToast("Task restored", "success"); });
   };
   
   const openEditModal = (todo: Todo) => { setEditTask(todo); };
-  
-  const saveTaskChanges = async (id: string, updates: Partial<Todo>) => {
-    await updateDoc(doc(db, 'todos', id), updates);
-  };
-
-  const setSmartDeadline = (type: 'today' | 'tomorrow') => {
-    const targetDate = type === 'today' ? new Date() : addDays(new Date(), 1);
-    const dateStr = format(targetDate, 'yyyy-MM-dd');
-    setDueDate(dateStr);
-    setDueTime(getShiftEndTime(dateStr, rotas, anchorDate));
-    setIsSmartDateOpen(false);
-  };
-
-  const applyEndOfDay = () => {
-    const targetDate = dueDate || format(new Date(), 'yyyy-MM-dd');
-    setDueTime(getShiftEndTime(targetDate, rotas, anchorDate));
-    setIsTimeOpen(false);
-  };
-
-  // --- DRAG AND DROP HANDLERS ---
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault(); 
-  };
-
-  const handleDrop = async (e: React.DragEvent, newStatus: Todo['status']) => {
-    const taskId = e.dataTransfer.getData("taskId");
-    if (taskId) {
-        await updateDoc(doc(db, 'todos', taskId), { 
-            status: newStatus, 
-            completed: newStatus === 'done' 
-        });
-    }
+  const saveTaskChanges = async (id: string, updates: Partial<Todo>) => { await updateDoc(doc(db, 'todos', id), updates); };
+  const setSmartDeadline = (type: 'today' | 'tomorrow') => { const date = type === 'today' ? new Date() : addDays(new Date(), 1); const dateStr = format(date, 'yyyy-MM-dd'); setDueDate(dateStr); setDueTime(getShiftEndTime(dateStr, rotas, anchorDate)); setIsSmartDateOpen(false); };
+  const applyEndOfDay = () => { const targetDate = dueDate || format(new Date(), 'yyyy-MM-dd'); setDueTime(getShiftEndTime(targetDate, rotas, anchorDate)); setIsTimeOpen(false); };
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
+  const handleDrop = async (e: React.DragEvent, newStatus: Todo['status']) => { 
+    const taskId = e.dataTransfer.getData("taskId"); 
+    if (taskId) { 
+      // Safety check for drag and drop to 'done'
+      if (newStatus === 'done') {
+         const task = todos.find(t => t.id === taskId);
+         if (task && (task.category === 'Referral' || task.category === 'Referrals')) {
+            setTaskToComplete(task);
+            setIsSafetyModalOpen(true);
+            return;
+         }
+      }
+      await updateDoc(doc(db, 'todos', taskId), { status: newStatus, completed: newStatus === 'done' }); 
+    } 
   };
 
   return (
     <div className="max-w-6xl mx-auto mt-6 px-4 pb-24 text-slate-100">
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} categories={categories} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} categories={categories} slashCommands={slashCommands} setSlashCommands={setSlashCommands} referralMethods={referralMethods} setReferralMethods={setReferralMethods} onSaveAutomation={saveAutomationSettings} />
       <EditTaskModal isOpen={!!editTask} onClose={() => setEditTask(null)} todo={editTask} onSave={saveTaskChanges} onDelete={deleteTodo} categories={categories} rotas={rotas} anchorDate={anchorDate} />
       <CalendarManagerModal isOpen={isManagerOpen} onClose={() => setIsManagerOpen(false)} outlookConnected={outlookConnected} outlookExpired={outlookExpired} googleConnected={googleConnected} onConnectOutlook={handleConnectOutlook} onConnectGoogle={handleConnectGoogle} onDisconnect={handleDisconnectCalendar} calendars={externalCalendars} toggleCalendar={toggleCalendar} />
+      <ReferralSafetyModal isOpen={isSafetyModalOpen} onClose={() => setIsSafetyModalOpen(false)} onConfirm={confirmReferralCompletion} methods={referralMethods} />
       
       <ToastContainer toasts={toasts} />
 
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v10.0</span></h1>
-          <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm"><Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span></div>
-        </div>
+        <div><h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v11.0</span></h1><div className="flex items-center gap-2 text-slate-400 mt-1 text-sm"><Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span></div></div>
         <div className="flex items-center gap-3">
           <div className="flex bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
             <button onClick={() => setViewMode('list')} className={`p-2 rounded transition ${viewMode==='list'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><LayoutTemplate size={18} /></button>
@@ -817,24 +945,16 @@ export default function Dashboard({ user }: DashboardProps) {
       {/* SENTENCE BUILDER UI */}
       <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-8 relative z-30">
         <form onSubmit={addTodo} className="p-6 bg-gradient-to-br from-indigo-900/40 to-slate-900/80 backdrop-blur-xl border border-indigo-500/40 rounded-2xl shadow-2xl ring-1 ring-indigo-500/20 text-lg md:text-xl leading-relaxed text-slate-300 font-light relative group">
-          
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-4">
             <span>In</span>
-            <div className="relative inline-block" ref={catRef}>
-              <button type="button" onClick={() => setIsCatOpen(!isCatOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors cursor-pointer flex items-center gap-1">{category} <ChevronDown size={14} className="opacity-50"/></button>
-              {isCatOpen && (<div className="absolute top-full left-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal">{categories.map(c => <button key={c} type="button" onClick={() => { setCategory(c); setIsCatOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-slate-300">{c}</button>)}</div>)}
-            </div>
+            <div className="relative inline-block" ref={catRef}><button type="button" onClick={() => setIsCatOpen(!isCatOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors cursor-pointer flex items-center gap-1">{category} <ChevronDown size={14} className="opacity-50"/></button>{isCatOpen && (<div className="absolute top-full left-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal">{categories.map(c => <button key={c} type="button" onClick={() => { setCategory(c); setIsCatOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-slate-300">{c}</button>)}</div>)}</div>
             <span>, I need to</span>
-            <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="describe the task..." className="bg-transparent border-b-2 border-indigo-500/30 focus:border-indigo-400 outline-none text-white font-medium placeholder-indigo-500/30 min-w-[200px] flex-grow transition-all"/>
+            <input value={input} onChange={handleInputChange} placeholder="describe the task..." className="bg-transparent border-b-2 border-indigo-500/30 focus:border-indigo-400 outline-none text-white font-medium placeholder-indigo-500/30 min-w-[200px] flex-grow transition-all"/>
             <span>for</span>
             <div className="relative inline-flex items-center"><UserIcon size={18} className="absolute left-0 text-slate-500" /><input value={patientInput} onChange={(e) => setPatientInput(e.target.value)} placeholder="patient name..." className="bg-transparent border-b-2 border-indigo-500/30 focus:border-indigo-400 outline-none text-white font-bold placeholder-indigo-500/30 pl-6 w-[180px] transition-all"/></div>
             <span>by</span>
-            {/* DATE & TIME SELECTORS */}
-            {!dueDate ? (
-              <div className="relative inline-block" ref={dateRef}><button type="button" onClick={() => setIsSmartDateOpen(!isSmartDateOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">📅 Set Deadline <ChevronDown size={14} className="opacity-50"/></button>{isSmartDateOpen && (<div className="absolute top-full left-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal"><button onClick={() => setSmartDeadline('today')} className="w-full text-left px-4 py-2 hover:bg-white/5 text-amber-300 flex items-center gap-2"><Moon size={14}/> End of Today</button><button onClick={() => setSmartDeadline('tomorrow')} className="w-full text-left px-4 py-2 hover:bg-white/5 text-sky-300 flex items-center gap-2"><Sun size={14}/> End of Tomorrow</button><div className="h-[1px] bg-slate-700 my-1"></div><button onClick={() => { setDueDate(format(new Date(), 'yyyy-MM-dd')); setIsSmartDateOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-slate-300 flex items-center gap-2"><CalendarIcon size={14}/> Custom Date...</button></div>)}</div>
-            ) : (<><div className="relative inline-block group/date"><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="bg-transparent text-indigo-300 font-bold border-b-2 border-indigo-500/30 focus:border-indigo-400 outline-none cursor-pointer w-[130px] uppercase text-sm"/></div><div className="relative inline-block" ref={timeRef}><button type="button" onClick={() => setIsTimeOpen(!isTimeOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">{dueTime || "TIME"} <Clock size={14} className="opacity-50"/></button>{isTimeOpen && (<div className="absolute top-full left-0 mt-2 w-[140px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 text-sm font-normal"><button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2"><Moon size={12}/> End of Day</button><button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>{TIME_SLOTS.map(t => <button key={t} type="button" onClick={() => { setDueTime(t); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-indigo-500/20 text-slate-300">{t}</button>)}</div>)}</div><button onClick={() => { setDueDate(''); setDueTime(''); }} className="ml-2 p-1 text-slate-500 hover:text-rose-400 transition"><X size={14}/></button></>)}
+            {!dueDate ? (<div className="relative inline-block" ref={dateRef}><button type="button" onClick={() => setIsSmartDateOpen(!isSmartDateOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">📅 Set Deadline <ChevronDown size={14} className="opacity-50"/></button>{isSmartDateOpen && (<div className="absolute top-full left-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal"><button onClick={() => setSmartDeadline('today')} className="w-full text-left px-4 py-2 hover:bg-white/5 text-amber-300 flex items-center gap-2"><Moon size={14}/> End of Today</button><button onClick={() => setSmartDeadline('tomorrow')} className="w-full text-left px-4 py-2 hover:bg-white/5 text-sky-300 flex items-center gap-2"><Sun size={14}/> End of Tomorrow</button><div className="h-[1px] bg-slate-700 my-1"></div><button onClick={() => { setDueDate(format(new Date(), 'yyyy-MM-dd')); setIsSmartDateOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-slate-300 flex items-center gap-2"><CalendarIcon size={14}/> Custom Date...</button></div>)}</div>) : (<><div className="relative inline-block group/date"><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="bg-transparent text-indigo-300 font-bold border-b-2 border-indigo-500/30 focus:border-indigo-400 outline-none cursor-pointer w-[130px] uppercase text-sm"/></div><div className="relative inline-block" ref={timeRef}><button type="button" onClick={() => setIsTimeOpen(!isTimeOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">{dueTime || "TIME"} <Clock size={14} className="opacity-50"/></button>{isTimeOpen && (<div className="absolute top-full left-0 mt-2 w-[140px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 text-sm font-normal"><button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2"><Moon size={12}/> End of Day</button><button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>{TIME_SLOTS.map(t => <button key={t} type="button" onClick={() => { setDueTime(t); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-indigo-500/20 text-slate-300">{t}</button>)}</div>)}</div><button onClick={() => { setDueDate(''); setDueTime(''); }} className="ml-2 p-1 text-slate-500 hover:text-rose-400 transition"><X size={14}/></button></>)}
             <span>with</span>
-            {/* PRIORITY SELECTOR */}
             <div className="relative inline-block" ref={prioRef}><button type="button" onClick={() => setIsPriorityOpen(!isPriorityOpen)} className={`font-bold border-b-2 border-dashed transition-colors flex items-center gap-1 ${priority === 'high' ? 'text-rose-400 border-rose-500/50' : priority === 'medium' ? 'text-amber-400 border-amber-500/50' : 'text-slate-400 border-slate-600'}`}>{priority.toUpperCase()} <Flag size={14} fill={priority === 'high' ? "currentColor" : "none"}/></button>{isPriorityOpen && (<div className="absolute top-full left-0 mt-2 w-32 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal">{['low', 'medium', 'high'].map(p => (<button key={p} type="button" onClick={()=>{setPriority(p as any); setIsPriorityOpen(false)}} className={`w-full text-left px-4 py-2 hover:bg-white/5 capitalize ${p==='high'?'text-rose-400':p==='medium'?'text-amber-400':'text-slate-400'}`}>{p}</button>))}</div>)}</div>
             <span>priority.</span>
           </div>
@@ -847,73 +967,20 @@ export default function Dashboard({ user }: DashboardProps) {
       {viewMode === 'list' && (
         <div className="space-y-4">
           {isLoading && <div className="text-center text-slate-500 py-10">Loading...</div>}
-          {groupedTodos.list.overdue.length > 0 && (
-            <div className="space-y-2">
-              <button onClick={() => toggleSection('overdue')} className="flex items-center gap-2 text-rose-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.list.overdue.length})</button>
-              <AnimatePresence>{sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence>
-            </div>
-          )}
-          <div className="space-y-2">
-            <button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Soon ({groupedTodos.list.soon.length})</button>
-            <AnimatePresence>{sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence>
-          </div>
-          <div className="space-y-2">
-            <button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-300 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later ({groupedTodos.list.later.length})</button>
-            <AnimatePresence>{sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence>
-          </div>
-          {groupedTodos.list.completed.length > 0 && (
-            <div className="space-y-2 pt-6 border-t border-white/5">
-              <button onClick={() => toggleSection('completed')} className="flex items-center gap-2 text-slate-500 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed ({groupedTodos.list.completed.length})</button>
-              <AnimatePresence>{sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence>
-            </div>
-          )}
+          {groupedTodos.list.overdue.length > 0 && (<div className="space-y-2"><button onClick={() => toggleSection('overdue')} className="flex items-center gap-2 text-rose-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.list.overdue.length})</button><AnimatePresence>{sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence></div>)}
+          <div className="space-y-2"><button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Soon ({groupedTodos.list.soon.length})</button><AnimatePresence>{sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence></div>
+          <div className="space-y-2"><button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-300 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later ({groupedTodos.list.later.length})</button><AnimatePresence>{sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence></div>
+          {groupedTodos.list.completed.length > 0 && (<div className="space-y-2 pt-6 border-t border-white/5"><button onClick={() => toggleSection('completed')} className="flex items-center gap-2 text-slate-500 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed ({groupedTodos.list.completed.length})</button><AnimatePresence>{sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence></div>)}
         </div>
       )}
 
-      {/* --- BOARD VIEW WITH DRAG & DROP --- */}
+      {/* --- BOARD VIEW --- */}
       {viewMode === 'board' && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 overflow-x-auto pb-4">
-           {/* TODO COLUMN */}
-           <div 
-             className="space-y-3 min-h-[200px]" 
-             onDragOver={handleDragOver} 
-             onDrop={(e) => handleDrop(e, 'todo')}
-           >
-             <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><Circle size={14} /> To Do ({groupedTodos.board.todo.length})</h3>
-             {groupedTodos.board.todo.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}
-           </div>
-
-           {/* IN PROGRESS */}
-           <div 
-             className="space-y-3 min-h-[200px]" 
-             onDragOver={handleDragOver} 
-             onDrop={(e) => handleDrop(e, 'in-progress')}
-           >
-             <h3 className="text-sm font-bold text-sky-400 uppercase tracking-wider flex items-center gap-2"><Activity size={14} /> In Progress ({groupedTodos.board.inProgress.length})</h3>
-             {groupedTodos.board.inProgress.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}
-           </div>
-
-           {/* WAITING */}
-           <div 
-             className="space-y-3 min-h-[200px]" 
-             onDragOver={handleDragOver} 
-             onDrop={(e) => handleDrop(e, 'waiting')}
-           >
-             <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2"><Hourglass size={14} /> Waiting ({groupedTodos.board.waiting.length})</h3>
-             {groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}
-           </div>
-
-           {/* DONE */}
-           <div 
-             className="space-y-3 min-h-[200px]" 
-             onDragOver={handleDragOver} 
-             onDrop={(e) => handleDrop(e, 'done')}
-           >
-             <h3 className="text-sm font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2"><CheckCircle2 size={14} /> Done ({groupedTodos.board.done.length})</h3>
-             <div className="opacity-70">
-                {groupedTodos.board.done.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}
-             </div>
-           </div>
+           <div className="space-y-3 min-h-[200px]" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'todo')}><h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><Circle size={14} /> To Do ({groupedTodos.board.todo.length})</h3>{groupedTodos.board.todo.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</div>
+           <div className="space-y-3 min-h-[200px]" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'in-progress')}><h3 className="text-sm font-bold text-sky-400 uppercase tracking-wider flex items-center gap-2"><Activity size={14} /> In Progress ({groupedTodos.board.inProgress.length})</h3>{groupedTodos.board.inProgress.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</div>
+           <div className="space-y-3 min-h-[200px]" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'waiting')}><h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2"><Hourglass size={14} /> Waiting ({groupedTodos.board.waiting.length})</h3>{groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</div>
+           <div className="space-y-3 min-h-[200px]" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'done')}><h3 className="text-sm font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2"><CheckCircle2 size={14} /> Done ({groupedTodos.board.done.length})</h3><div className="opacity-70">{groupedTodos.board.done.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</div></div>
         </div>
       )}
 
