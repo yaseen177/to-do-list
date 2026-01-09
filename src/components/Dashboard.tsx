@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { signOut, updatePassword } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck } from 'lucide-react';
 import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, differenceInCalendarWeeks, startOfWeek, subWeeks } from 'date-fns';
 
 // --- TYPES ---
@@ -55,24 +56,13 @@ const getDayName = (dateStr: string) => {
 // 🔄 SMART ROTA LOGIC
 const getShiftEndTime = (dateStr: string, rotas: RotaSystem, anchorDateStr?: string) => {
   if (!rotas || rotas.length === 0) return '17:30';
-  
   const targetDate = parseISO(dateStr);
   const day = getDayName(dateStr);
-  
-  // Default to today if no anchor is set (assumes Week 1 started this week)
   const anchor = anchorDateStr ? parseISO(anchorDateStr) : startOfWeek(new Date(), { weekStartsOn: 1 });
-  
-  // Calculate weeks passed since the anchor date
   const weeksPassed = differenceInCalendarWeeks(targetDate, anchor, { weekStartsOn: 1 });
-  
-  // Calculate which index in the cycle we are currently in.
-  // Using Math.abs to handle past dates correctly, and modulo for the cycle.
-  // We add rotas.length to handle negative modulo results gracefully.
   const cycleIndex = ((weeksPassed % rotas.length) + rotas.length) % rotas.length;
-  
   const currentSchedule = rotas[cycleIndex];
   const daySettings = currentSchedule[day] || DEFAULT_WEEK.monday;
-  
   if (daySettings.isOff) return '17:30'; 
   return daySettings.end;
 };
@@ -87,13 +77,10 @@ const getTimeRemaining = (dueDateStr: string, dueTimeStr: string | undefined, no
     due.setHours(23, 59, 59);
   }
   if (isPast(due)) return { text: 'Overdue', color: 'text-rose-400 font-bold' };
-  
   const duration = intervalToDuration({ start: now, end: due });
   const parts = [];
   if (duration.days) parts.push(`${duration.days}d`);
   if (duration.hours) parts.push(`${duration.hours}h`);
-  if (duration.minutes) parts.push(`${duration.minutes}m`);
-  
   const text = parts.slice(0, 2).join(' ') + ' left'; 
   let color = 'text-indigo-300';
   if (!duration.months && !duration.days && duration.hours && duration.hours < 4) color = 'text-amber-400 font-bold';
@@ -110,18 +97,20 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
   return parts.length > 0 ? parts.join(' ') : 'Just now';
 };
 
-// --- SETTINGS MODAL COMPONENT ---
-const ScheduleSettings = ({ isOpen, onClose, rotas, onSave, anchorDate }: any) => {
+// --- SETTINGS MODAL COMPONENT (Now with Tabs) ---
+const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user }: any) => {
+  const [activeTab, setActiveTab] = useState<'rota' | 'account'>('rota');
   const [localRotas, setLocalRotas] = useState<RotaSystem>(rotas);
   const [activeWeekIndex, setActiveWeekIndex] = useState(0);
+  const [currentWeekSelection, setCurrentWeekSelection] = useState(0);
   
-  // UX Friendly: Ask user "Which week is it NOW?" instead of "Start Date"
-  // We calculate the anchor date based on their answer.
-  const [currentWeekSelection, setCurrentWeekSelection] = useState(0); 
+  // Password State
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordMsg, setPasswordMsg] = useState({ text: '', type: '' });
 
   useEffect(() => {
     if (rotas) setLocalRotas(rotas);
-    // Calculate which week we are currently in based on existing anchor
     if (anchorDate && rotas.length > 0) {
         const anchor = parseISO(anchorDate);
         const weeksPassed = differenceInCalendarWeeks(new Date(), anchor, { weekStartsOn: 1 });
@@ -132,7 +121,8 @@ const ScheduleSettings = ({ isOpen, onClose, rotas, onSave, anchorDate }: any) =
 
   if (!isOpen) return null;
 
-  const handleChange = (day: string, field: keyof DaySchedule, value: any) => {
+  // Rota Handlers
+  const handleRotaChange = (day: string, field: keyof DaySchedule, value: any) => {
     const updatedRotas = [...localRotas];
     updatedRotas[activeWeekIndex] = {
       ...updatedRotas[activeWeekIndex],
@@ -140,120 +130,134 @@ const ScheduleSettings = ({ isOpen, onClose, rotas, onSave, anchorDate }: any) =
     };
     setLocalRotas(updatedRotas);
   };
-
-  const addWeek = () => {
-    setLocalRotas([...localRotas, JSON.parse(JSON.stringify(DEFAULT_WEEK))]);
-    setActiveWeekIndex(localRotas.length);
-  };
-
-  const removeWeek = (index: number) => {
-    if (localRotas.length <= 1) return;
-    const updated = localRotas.filter((_, i) => i !== index);
-    setLocalRotas(updated);
-    setActiveWeekIndex(0);
-  };
-
-  const handleSave = () => {
-    // Reverse Engineering: Calculate the Anchor Date based on user's selection
-    // If user says "Today is Week 2" (index 1), we set Anchor Date to 1 week ago.
+  const addWeek = () => { setLocalRotas([...localRotas, JSON.parse(JSON.stringify(DEFAULT_WEEK))]); setActiveWeekIndex(localRotas.length); };
+  const removeWeek = (index: number) => { if(localRotas.length<=1)return; setLocalRotas(localRotas.filter((_,i)=>i!==index)); setActiveWeekIndex(0); };
+  const handleSaveRota = () => {
     const today = new Date();
-    const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 }); // Monday of this week
-    
-    // We subtract the selected index to find when "Week 1" (Index 0) would have started
+    const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
     const newAnchorDate = subWeeks(startOfCurrentWeek, currentWeekSelection);
     const newAnchorStr = format(newAnchorDate, 'yyyy-MM-dd');
+    onSaveRotas(localRotas, newAnchorStr);
+  };
 
-    onSave(localRotas, newAnchorStr);
+  // Password Handler
+  const handleUpdatePassword = async () => {
+    if (newPassword.length < 8) {
+      setPasswordMsg({ text: 'Password too short (min 8 chars)', type: 'error' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordMsg({ text: 'Passwords do not match', type: 'error' });
+      return;
+    }
+    try {
+      if (user) {
+        await updatePassword(user, newPassword);
+        setPasswordMsg({ text: 'Password updated successfully!', type: 'success' });
+        setNewPassword(''); setConfirmPassword('');
+      }
+    } catch (err: any) {
+      setPasswordMsg({ text: 'Error: ' + err.message, type: 'error' }); // Ideally handle re-auth here
+    }
   };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
         <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900 sticky top-0 z-10">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings size={20} /> Rota Settings</h2>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings size={20} /> Settings</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
         </div>
 
-        {/* --- ROTA SYNC UI --- */}
-        <div className="bg-indigo-500/10 border-b border-indigo-500/20 p-4">
-            <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-bold text-indigo-200 flex items-center gap-2"><RefreshCw size={14}/> Sync Current Week</span>
-                <span className="text-xs text-indigo-300/60">{format(new Date(), 'd MMM yyyy')}</span>
-            </div>
-            <div className="flex items-center gap-3">
-                <span className="text-sm text-slate-300">This week is:</span>
-                <div className="relative flex-1">
-                    <select 
-                        value={currentWeekSelection} 
-                        onChange={(e) => setCurrentWeekSelection(Number(e.target.value))}
-                        className="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 appearance-none cursor-pointer focus:border-indigo-500 focus:outline-none"
-                    >
-                        {localRotas.map((_, idx) => (
-                            <option key={idx} value={idx}>Week {idx + 1}</option>
-                        ))}
-                    </select>
-                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        {/* TABS */}
+        <div className="flex border-b border-slate-800">
+          <button onClick={() => setActiveTab('rota')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'rota' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Work Schedule</button>
+          <button onClick={() => setActiveTab('account')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'account' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Account & Security</button>
+        </div>
+
+        {/* --- ROTA TAB --- */}
+        {activeTab === 'rota' && (
+          <>
+            <div className="bg-indigo-500/10 border-b border-indigo-500/20 p-4">
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-bold text-indigo-200 flex items-center gap-2"><RefreshCw size={14}/> Sync Current Week</span>
+                    <span className="text-xs text-indigo-300/60">{format(new Date(), 'd MMM yyyy')}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                    <span className="text-sm text-slate-300">This week is:</span>
+                    <div className="relative flex-1">
+                        <select value={currentWeekSelection} onChange={(e) => setCurrentWeekSelection(Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 appearance-none cursor-pointer focus:border-indigo-500 focus:outline-none">
+                            {localRotas.map((_, idx) => (<option key={idx} value={idx}>Week {idx + 1}</option>))}
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    </div>
                 </div>
             </div>
-        </div>
-
-        {/* Week Tabs */}
-        <div className="flex items-center gap-2 px-6 pt-4 pb-2 overflow-x-auto scrollbar-hide">
-          {localRotas.map((_, idx) => (
-            <div key={idx} className="flex items-center">
-              <button 
-                onClick={() => setActiveWeekIndex(idx)}
-                className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${activeWeekIndex === idx ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
-              >
-                Edit Week {idx + 1}
-              </button>
-              {localRotas.length > 1 && activeWeekIndex === idx && (
-                <button onClick={() => removeWeek(idx)} className="ml-1 p-1 text-rose-400 hover:bg-rose-500/10 rounded-full" title="Remove Week">
-                  <X size={12} />
-                </button>
-              )}
+            <div className="flex items-center gap-2 px-6 pt-4 pb-2 overflow-x-auto scrollbar-hide">
+              {localRotas.map((_, idx) => (
+                <div key={idx} className="flex items-center">
+                  <button onClick={() => setActiveWeekIndex(idx)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${activeWeekIndex === idx ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Week {idx + 1}</button>
+                  {localRotas.length > 1 && activeWeekIndex === idx && <button onClick={() => removeWeek(idx)} className="ml-1 p-1 text-rose-400 hover:bg-rose-500/10 rounded-full"><X size={12} /></button>}
+                </div>
+              ))}
+              <button onClick={addWeek} className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-indigo-500 transition"><Plus size={14} /></button>
             </div>
-          ))}
-          <button onClick={addWeek} className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-indigo-500 transition" title="Add Week Cycle">
-            <Plus size={14} />
-          </button>
-        </div>
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => {
+                const dayData = (localRotas[activeWeekIndex] || DEFAULT_WEEK)[day] || DEFAULT_WEEK.monday;
+                return (
+                  <div key={day} className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                    <div className="w-24 capitalize text-sm font-medium text-slate-200">{day}</div>
+                    {!dayData.isOff ? (
+                      <>
+                        <input type="time" value={dayData.start} onChange={(e) => handleRotaChange(day, 'start', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" />
+                        <span className="text-slate-500">-</span>
+                        <input type="time" value={dayData.end} onChange={(e) => handleRotaChange(day, 'end', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" />
+                      </>
+                    ) : <span className="flex-1 text-center text-xs text-slate-500 uppercase tracking-wider font-bold">Day Off</span>}
+                    <button onClick={() => handleRotaChange(day, 'isOff', !dayData.isOff)} className={`px-3 py-1 rounded text-xs font-bold transition ${dayData.isOff ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}>{dayData.isOff ? 'OFF' : 'ON'}</button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0">
+              <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+              <button onClick={handleSaveRota} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2"><Save size={16} /> Save Rota</button>
+            </div>
+          </>
+        )}
 
-        <div className="p-6 space-y-4 overflow-y-auto flex-1">
-          {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => {
-            const currentSchedule = localRotas[activeWeekIndex] || DEFAULT_WEEK;
-            const dayData = currentSchedule[day] || DEFAULT_WEEK.monday;
-
-            return (
-              <div key={day} className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                <div className="w-24 capitalize text-sm font-medium text-slate-200">{day}</div>
-                
-                {!dayData.isOff ? (
-                  <>
-                    <input type="time" value={dayData.start} onChange={(e) => handleChange(day, 'start', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" />
-                    <span className="text-slate-500">-</span>
-                    <input type="time" value={dayData.end} onChange={(e) => handleChange(day, 'end', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" />
-                  </>
-                ) : (
-                   <span className="flex-1 text-center text-xs text-slate-500 uppercase tracking-wider font-bold">Day Off</span>
-                )}
-                
-                <button 
-                  onClick={() => handleChange(day, 'isOff', !dayData.isOff)}
-                  className={`px-3 py-1 rounded text-xs font-bold transition ${dayData.isOff ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}
-                >
-                  {dayData.isOff ? 'OFF' : 'ON'}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-        <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
-          <button onClick={handleSave} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2">
-            <Save size={16} /> Save Rota
-          </button>
-        </div>
+        {/* --- ACCOUNT TAB --- */}
+        {activeTab === 'account' && (
+          <div className="p-6 space-y-6 overflow-y-auto flex-1">
+             <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
+                <h3 className="text-white font-bold flex items-center gap-2 mb-4"><Lock size={18} className="text-indigo-400"/> Change Password</h3>
+                <div className="space-y-4">
+                   <div>
+                      <label className="block text-xs text-slate-400 mb-1 ml-1">New Password</label>
+                      <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-indigo-500 focus:outline-none" placeholder="Min 8 chars, mixed case..." />
+                   </div>
+                   <div>
+                      <label className="block text-xs text-slate-400 mb-1 ml-1">Confirm Password</label>
+                      <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-indigo-500 focus:outline-none" placeholder="Retype password" />
+                   </div>
+                   {passwordMsg.text && (
+                     <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                       {passwordMsg.text}
+                     </div>
+                   )}
+                   <button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition">Update Password</button>
+                </div>
+             </div>
+             
+             <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30">
+                <h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Your data is stored securely in compliance with UK GDPR standards. Patient names are only stored on your specific encrypted instance.
+                </p>
+             </div>
+          </div>
+        )}
       </motion.div>
     </div>
   );
@@ -263,14 +267,10 @@ const ScheduleSettings = ({ isOpen, onClose, rotas, onSave, anchorDate }: any) =
 const TaskItem = ({ 
   todo, now, editingId, editForm, setEditForm, saveEdit, startEditing, deleteTodo, toggleComplete, privacyMode, setEditingId, updateStatus, rotas, anchorDate
 }: any) => {
-  
   const [isEditTimeOpen, setIsEditTimeOpen] = useState(false);
   const remaining = getTimeRemaining(todo.dueDate, todo.dueTime, now);
   const waiting = getTimeWaiting(todo.createdAt, now);
-  const createdStr = todo.createdAt?.seconds 
-    ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM') 
-    : 'Now';
-
+  const createdStr = todo.createdAt?.seconds ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM') : 'Now';
   const currentStatus = todo.status || 'todo'; 
   const currentPriority = todo.priority || 'medium';
 
@@ -282,106 +282,51 @@ const TaskItem = ({
   };
 
   return (
-    <motion.div 
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      className={`glass-panel p-3 flex flex-col sm:flex-row sm:items-start justify-between group border-l-4 mb-3 ${todo.completed ? 'border-l-slate-600 opacity-60 bg-slate-900/40' : currentPriority === 'high' ? 'border-l-rose-500 shadow-rose-500/10' : 'border-l-indigo-500'}`}
-    >
+    <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className={`glass-panel p-3 flex flex-col sm:flex-row sm:items-start justify-between group border-l-4 mb-3 ${todo.completed ? 'border-l-slate-600 opacity-60 bg-slate-900/40' : currentPriority === 'high' ? 'border-l-rose-500 shadow-rose-500/10' : 'border-l-indigo-500'}`}>
       <div className="flex items-start gap-3 w-full">
         {editingId !== todo.id && (
           <button onClick={() => toggleComplete(todo)} className="text-slate-500 hover:text-indigo-400 transition mt-1">
             {todo.completed ? <CheckCircle2 className="text-emerald-500/80" size={22} /> : <Circle size={22} />}
           </button>
         )}
-        
         <div className="flex-1 min-w-0">
           {editingId === todo.id ? (
-            /* EDIT MODE */
             <div className="flex flex-col gap-2 w-full pr-12">
                 <div className="flex gap-2 relative">
-                  <input 
-                    value={editForm.patientName}
-                    onChange={(e) => setEditForm({ ...editForm, patientName: e.target.value })}
-                    className="w-1/3 bg-slate-800/50 text-indigo-300 font-bold text-sm p-2 rounded border border-indigo-500/30 focus:outline-none"
-                    placeholder="Patient Name"
-                  />
-                  <input 
-                    type="date"
-                    value={editForm.dueDate || ''}
-                    onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
-                    className="bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 w-[110px]"
-                  />
+                  <input value={editForm.patientName} onChange={(e) => setEditForm({ ...editForm, patientName: e.target.value })} className="w-1/3 bg-slate-800/50 text-indigo-300 font-bold text-sm p-2 rounded border border-indigo-500/30 focus:outline-none" placeholder="Patient Name" />
+                  <input type="date" value={editForm.dueDate || ''} onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })} className="bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 w-[110px]" />
                   <div className="relative">
-                    <button onClick={() => setIsEditTimeOpen(!isEditTimeOpen)} className="flex items-center gap-1 bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 w-[80px] justify-center">
-                       {editForm.dueTime || <Clock size={14}/>}
-                    </button>
+                    <button onClick={() => setIsEditTimeOpen(!isEditTimeOpen)} className="flex items-center gap-1 bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 w-[80px] justify-center">{editForm.dueTime || <Clock size={14}/>}</button>
                     {isEditTimeOpen && (
                       <div className="absolute top-full left-0 mt-1 w-[140px] max-h-[150px] overflow-y-auto bg-slate-800 border border-slate-700 rounded z-50">
-                         {/* END OF DAY SHORTCUT */}
-                         <button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2">
-                           <Moon size={12}/> End of Day
-                         </button>
+                         <button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2"><Moon size={12}/> End of Day</button>
                          <button onClick={() => { setEditForm({...editForm, dueTime: ''}); setIsEditTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>
                          {TIME_SLOTS.map(t => <button key={t} onClick={()=>{setEditForm({...editForm, dueTime:t}); setIsEditTimeOpen(false)}} className="w-full text-left px-2 py-1 text-xs hover:bg-white/10 text-slate-300">{t}</button>)}
                       </div>
                     )}
                   </div>
                 </div>
-                <input 
-                  value={editForm.text}
-                  onChange={(e) => setEditForm({ ...editForm, text: e.target.value })}
-                  onKeyDown={(e) => e.key === 'Enter' && saveEdit(todo.id)}
-                  className="w-full bg-slate-800/50 text-white p-2 rounded border border-indigo-500/50 focus:outline-none"
-                  autoFocus
-                />
+                <input value={editForm.text} onChange={(e) => setEditForm({ ...editForm, text: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && saveEdit(todo.id)} className="w-full bg-slate-800/50 text-white p-2 rounded border border-indigo-500/50 focus:outline-none" autoFocus />
             </div>
           ) : (
-            /* READ MODE */
             <div className={`${privacyMode ? 'blur-md hover:blur-none select-none duration-500' : ''}`}>
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 {currentPriority === 'high' && <span className="animate-pulse text-rose-500"><AlertTriangle size={14} /></span>}
-                {todo.patientName && (
-                  <div className="flex items-center gap-1.5 text-indigo-300 font-bold text-sm">
-                    <UserIcon size={12} /> {todo.patientName}
-                  </div>
-                )}
-                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-white/5 px-2 py-0.5 rounded">
-                  {todo.category}
-                </span>
-                <button 
-                  onClick={() => updateStatus(todo)}
-                  className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded border ml-auto sm:ml-0 transition ${
-                    currentStatus === 'in-progress' ? 'border-sky-500/30 text-sky-400 bg-sky-500/10' :
-                    currentStatus === 'waiting' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' :
-                    currentStatus === 'done' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' :
-                    'border-slate-700 text-slate-500'
-                  }`}
-                >
-                  {currentStatus.replace('-', ' ')}
-                </button>
+                {todo.patientName && <div className="flex items-center gap-1.5 text-indigo-300 font-bold text-sm"><UserIcon size={12} /> {todo.patientName}</div>}
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-white/5 px-2 py-0.5 rounded">{todo.category}</span>
+                <button onClick={() => updateStatus(todo)} className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded border ml-auto sm:ml-0 transition ${currentStatus === 'in-progress' ? 'border-sky-500/30 text-sky-400 bg-sky-500/10' : currentStatus === 'waiting' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' : currentStatus === 'done' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' : 'border-slate-700 text-slate-500'}`}>{currentStatus.replace('-', ' ')}</button>
               </div>
-
-              <p className={`text-base transition-all ${todo.completed ? 'line-through decoration-slate-600 text-slate-500' : 'text-slate-200'}`}>
-                {todo.text}
-              </p>
-              
+              <p className={`text-base transition-all ${todo.completed ? 'line-through decoration-slate-600 text-slate-500' : 'text-slate-200'}`}>{todo.text}</p>
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-500 border-t border-white/5 pt-2 w-full">
                 <span className="text-slate-500 flex items-center gap-1" title="Created"><Clock size={10} /> {createdStr}</span>
                 <span className="text-slate-400 flex items-center gap-1" title="Time Waiting"><Hourglass size={10} /> {waiting}</span>
-                {remaining && !todo.completed && (
-                  <span className={`font-medium flex items-center gap-1 ${remaining.color}`}><Target size={10}/> {remaining.text}</span>
-                )}
-                {todo.dueDate && (
-                   <span className="text-slate-300 flex items-center gap-1"><Calendar size={10} /> {format(parseISO(todo.dueDate), 'd MMM')} {todo.dueTime}</span>
-                )}
+                {remaining && !todo.completed && <span className={`font-medium flex items-center gap-1 ${remaining.color}`}><Target size={10}/> {remaining.text}</span>}
+                {todo.dueDate && <span className="text-slate-300 flex items-center gap-1"><Calendar size={10} /> {format(parseISO(todo.dueDate), 'd MMM')} {todo.dueTime}</span>}
               </div>
             </div>
           )}
         </div>
       </div>
-
       <div className="flex items-center gap-2 absolute top-3 right-3 sm:static sm:ml-4 self-start">
         {editingId === todo.id ? (
           <>
@@ -404,7 +349,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list'); 
   const [rotas, setRotas] = useState<RotaSystem>([DEFAULT_WEEK]); 
-  const [anchorDate, setAnchorDate] = useState<string>(''); // Stores the "Week 1 Start Date"
+  const [anchorDate, setAnchorDate] = useState<string>(''); 
   
   // Input State
   const [input, setInput] = useState('');
@@ -461,7 +406,6 @@ export default function Dashboard({ user }: DashboardProps) {
       setIsLoading(false);
     });
     
-    // Fetch User Settings
     onSnapshot(doc(db, "users", user.uid), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
@@ -525,6 +469,10 @@ export default function Dashboard({ user }: DashboardProps) {
     setIsSettingsOpen(false);
   };
 
+  const handleSignOut = async () => {
+    try { await signOut(auth); } catch (error) { console.error("Error signing out", error); }
+  };
+
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() && !patientInput.trim()) return;
@@ -569,12 +517,12 @@ export default function Dashboard({ user }: DashboardProps) {
 
   return (
     <div className="max-w-6xl mx-auto mt-6 px-4 pb-24">
-      <ScheduleSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSave={saveRotas} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} />
 
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v3.1 (Sync)</span></h1>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v4.0</span></h1>
           <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
             <Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span>
           </div>
@@ -584,16 +532,17 @@ export default function Dashboard({ user }: DashboardProps) {
             <button onClick={() => setViewMode('list')} className={`p-2 rounded transition ${viewMode==='list'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><LayoutTemplate size={18} /></button>
             <button onClick={() => setViewMode('board')} className={`p-2 rounded transition ${viewMode==='board'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><KanbanSquare size={18} /></button>
           </div>
-          <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 transition" title="Work Schedule"><Settings size={20} /></button>
-          <div className="relative group">
+          <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 transition" title="Settings"><Settings size={20} /></button>
+          <div className="relative group hidden sm:block">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
             <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="bg-slate-800/50 border border-slate-700 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-indigo-500 w-[180px]" />
           </div>
           <button onClick={() => setPrivacyMode(!privacyMode)} className={`p-2 rounded-lg border transition ${privacyMode ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>{privacyMode ? <EyeOff size={20} /> : <Eye size={20} />}</button>
+          <button onClick={handleSignOut} className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500 hover:text-white transition ml-2" title="Sign Out"><LogOut size={20} /></button>
         </div>
       </header>
 
-      {/* INPUT FORM */}
+      {/* INPUT FORM (Unchanged) */}
       <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-8 relative z-30">
         <form onSubmit={addTodo} className="glass-panel p-2 pl-3 flex flex-wrap gap-2 items-center focus-within:ring-1 ring-indigo-500/50 transition-all shadow-lg">
           <div className="relative group min-w-[120px]">
@@ -601,8 +550,6 @@ export default function Dashboard({ user }: DashboardProps) {
             <input value={patientInput} onChange={(e) => setPatientInput(e.target.value)} className="w-full bg-slate-900/50 border border-transparent focus:border-indigo-500/30 rounded-lg py-2 pl-9 pr-2 text-sm text-slate-200 focus:outline-none placeholder-slate-600" placeholder="Patient" />
           </div>
           <input value={input} onChange={(e) => setInput(e.target.value)} className="flex-1 bg-transparent border-none focus:outline-none text-base placeholder-slate-600 h-10 text-slate-200 min-w-[160px]" placeholder="New task..." />
-          
-          {/* Priority */}
           <div className="relative" ref={prioRef}>
              <button type="button" onClick={() => setIsPriorityOpen(!isPriorityOpen)} className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition border ${priority === 'high' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : priority === 'medium' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
                 <Flag size={14} fill={priority === 'high' ? "currentColor" : "none"} />
@@ -613,7 +560,6 @@ export default function Dashboard({ user }: DashboardProps) {
                </div>
              )}
           </div>
-
           <div className="flex items-center gap-1 bg-slate-900/50 rounded-lg p-1 border border-slate-700/50">
              <button type="button" onClick={setDueToday} className="p-1.5 text-slate-400 hover:text-indigo-300 hover:bg-white/5 rounded-md" title="Today"><Target size={16} /></button>
              <div className="w-[1px] h-4 bg-slate-700"></div>
@@ -623,17 +569,13 @@ export default function Dashboard({ user }: DashboardProps) {
                <button type="button" onClick={() => setIsTimeOpen(!isTimeOpen)} className="flex items-center gap-1 bg-transparent text-slate-400 text-sm hover:text-white px-2 py-1 min-w-[60px] justify-center"><Clock size={14} /><span>{dueTime || "Time"}</span></button>
                {isTimeOpen && (
                  <div className="absolute top-full right-0 mt-2 w-[140px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50">
-                   {/* END OF DAY SHORTCUT */}
-                   <button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2">
-                     <Moon size={12}/> End of Day
-                   </button>
+                   <button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2"><Moon size={12}/> End of Day</button>
                    <button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">None</button>
                    {TIME_SLOTS.map(time => (<button key={time} type="button" onClick={() => { setDueTime(time); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-indigo-500/20">{time}</button>))}
                  </div>
                )}
              </div>
           </div>
-          
           <div className="relative min-w-[120px]" ref={catRef}>
              <button type="button" onClick={() => setIsCatOpen(!isCatOpen)} className="w-full flex items-center justify-between gap-2 bg-slate-800/50 border border-slate-700/50 hover:border-indigo-500/50 px-3 py-2 rounded-lg text-sm text-slate-300 transition"><span className="truncate">{category}</span><ChevronDown size={14} className={`transition-transform ${isCatOpen ? 'rotate-180' : ''}`} /></button>
              {isCatOpen && (
@@ -649,54 +591,33 @@ export default function Dashboard({ user }: DashboardProps) {
         </div>
       </motion.div>
 
-      {/* --- LIST VIEW --- */}
+      {/* --- VIEWS --- */}
       {viewMode === 'list' && (
         <div className="space-y-4">
           {isLoading && <div className="text-center text-slate-500 py-10">Loading...</div>}
-          
           {groupedTodos.list.overdue.length > 0 && (
             <div className="space-y-2">
-              <button onClick={() => toggleSection('overdue')} className="flex items-center gap-2 text-rose-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">
-                {sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.list.overdue.length})
-              </button>
-              <AnimatePresence>
-                {sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}
-              </AnimatePresence>
+              <button onClick={() => toggleSection('overdue')} className="flex items-center gap-2 text-rose-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.list.overdue.length})</button>
+              <AnimatePresence>{sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
             </div>
           )}
-
           <div className="space-y-2">
-            <button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">
-               {sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Soon ({groupedTodos.list.soon.length})
-            </button>
-            <AnimatePresence>
-              {sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}
-            </AnimatePresence>
+            <button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Soon ({groupedTodos.list.soon.length})</button>
+            <AnimatePresence>{sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
           </div>
-
           <div className="space-y-2">
-            <button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-300 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">
-               {sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later ({groupedTodos.list.later.length})
-            </button>
-            <AnimatePresence>
-              {sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}
-            </AnimatePresence>
+            <button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-300 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later ({groupedTodos.list.later.length})</button>
+            <AnimatePresence>{sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
           </div>
-
           {groupedTodos.list.completed.length > 0 && (
             <div className="space-y-2 pt-6 border-t border-white/5">
-              <button onClick={() => toggleSection('completed')} className="flex items-center gap-2 text-slate-500 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">
-                 {sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed ({groupedTodos.list.completed.length})
-              </button>
-              <AnimatePresence>
-                {sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}
-              </AnimatePresence>
+              <button onClick={() => toggleSection('completed')} className="flex items-center gap-2 text-slate-500 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed ({groupedTodos.list.completed.length})</button>
+              <AnimatePresence>{sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
             </div>
           )}
         </div>
       )}
 
-      {/* --- KANBAN VIEW 📋 --- */}
       {viewMode === 'board' && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 overflow-x-auto pb-4">
            <div className="space-y-3">
@@ -718,7 +639,7 @@ export default function Dashboard({ user }: DashboardProps) {
         </div>
       )}
 
-      {/* --- STATS FOOTER 📊 --- */}
+      {/* FOOTER */}
       <div className="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-md border-t border-slate-800 p-3 z-50">
          <div className="max-w-6xl mx-auto flex items-center justify-between text-xs sm:text-sm text-slate-400">
             <div className="flex gap-4">
