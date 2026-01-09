@@ -3,8 +3,8 @@ import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon } from 'lucide-react';
-import { format, isPast, parseISO, intervalToDuration, addHours, isBefore } from 'date-fns';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RotateCw, RefreshCw } from 'lucide-react';
+import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, differenceInCalendarWeeks, startOfWeek, subWeeks } from 'date-fns';
 
 // --- TYPES ---
 interface Todo {
@@ -21,16 +21,14 @@ interface Todo {
   createdAt: any; 
 }
 
-// 🗓️ Schedule Types
 type DaySchedule = { start: string; end: string; isOff: boolean };
 type WeeklySchedule = Record<string, DaySchedule>;
+type RotaSystem = WeeklySchedule[]; 
 
-const DEFAULT_SCHEDULE: WeeklySchedule = {
-  monday: { start: '09:00', end: '17:30', isOff: false },
-  tuesday: { start: '09:00', end: '17:30', isOff: false },
-  wednesday: { start: '09:00', end: '17:30', isOff: false },
-  thursday: { start: '09:00', end: '17:30', isOff: false },
-  friday: { start: '09:00', end: '17:30', isOff: false },
+const DEFAULT_DAY: DaySchedule = { start: '09:00', end: '17:30', isOff: false };
+const DEFAULT_WEEK: WeeklySchedule = {
+  monday: { ...DEFAULT_DAY }, tuesday: { ...DEFAULT_DAY }, wednesday: { ...DEFAULT_DAY },
+  thursday: { ...DEFAULT_DAY }, friday: { ...DEFAULT_DAY },
   saturday: { start: '09:00', end: '13:00', isOff: false },
   sunday: { start: '00:00', end: '00:00', isOff: true },
 };
@@ -54,9 +52,27 @@ const getDayName = (dateStr: string) => {
   return format(date, 'EEEE').toLowerCase(); 
 };
 
-const getShiftEndTime = (dateStr: string, schedule: WeeklySchedule) => {
+// 🔄 SMART ROTA LOGIC
+const getShiftEndTime = (dateStr: string, rotas: RotaSystem, anchorDateStr?: string) => {
+  if (!rotas || rotas.length === 0) return '17:30';
+  
+  const targetDate = parseISO(dateStr);
   const day = getDayName(dateStr);
-  const daySettings = schedule[day] || DEFAULT_SCHEDULE.monday;
+  
+  // Default to today if no anchor is set (assumes Week 1 started this week)
+  const anchor = anchorDateStr ? parseISO(anchorDateStr) : startOfWeek(new Date(), { weekStartsOn: 1 });
+  
+  // Calculate weeks passed since the anchor date
+  const weeksPassed = differenceInCalendarWeeks(targetDate, anchor, { weekStartsOn: 1 });
+  
+  // Calculate which index in the cycle we are currently in.
+  // Using Math.abs to handle past dates correctly, and modulo for the cycle.
+  // We add rotas.length to handle negative modulo results gracefully.
+  const cycleIndex = ((weeksPassed % rotas.length) + rotas.length) % rotas.length;
+  
+  const currentSchedule = rotas[cycleIndex];
+  const daySettings = currentSchedule[day] || DEFAULT_WEEK.monday;
+  
   if (daySettings.isOff) return '17:30'; 
   return daySettings.end;
 };
@@ -95,54 +111,147 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
 };
 
 // --- SETTINGS MODAL COMPONENT ---
-const ScheduleSettings = ({ isOpen, onClose, schedule, onSave }: any) => {
-  const [localSchedule, setLocalSchedule] = useState<WeeklySchedule>(schedule);
+const ScheduleSettings = ({ isOpen, onClose, rotas, onSave, anchorDate }: any) => {
+  const [localRotas, setLocalRotas] = useState<RotaSystem>(rotas);
+  const [activeWeekIndex, setActiveWeekIndex] = useState(0);
+  
+  // UX Friendly: Ask user "Which week is it NOW?" instead of "Start Date"
+  // We calculate the anchor date based on their answer.
+  const [currentWeekSelection, setCurrentWeekSelection] = useState(0); 
+
+  useEffect(() => {
+    if (rotas) setLocalRotas(rotas);
+    // Calculate which week we are currently in based on existing anchor
+    if (anchorDate && rotas.length > 0) {
+        const anchor = parseISO(anchorDate);
+        const weeksPassed = differenceInCalendarWeeks(new Date(), anchor, { weekStartsOn: 1 });
+        const currentIndex = ((weeksPassed % rotas.length) + rotas.length) % rotas.length;
+        setCurrentWeekSelection(currentIndex);
+    }
+  }, [rotas, anchorDate]);
 
   if (!isOpen) return null;
 
   const handleChange = (day: string, field: keyof DaySchedule, value: any) => {
-    setLocalSchedule(prev => ({
-      ...prev,
-      [day]: { ...prev[day], [field]: value }
-    }));
+    const updatedRotas = [...localRotas];
+    updatedRotas[activeWeekIndex] = {
+      ...updatedRotas[activeWeekIndex],
+      [day]: { ...updatedRotas[activeWeekIndex][day], [field]: value }
+    };
+    setLocalRotas(updatedRotas);
+  };
+
+  const addWeek = () => {
+    setLocalRotas([...localRotas, JSON.parse(JSON.stringify(DEFAULT_WEEK))]);
+    setActiveWeekIndex(localRotas.length);
+  };
+
+  const removeWeek = (index: number) => {
+    if (localRotas.length <= 1) return;
+    const updated = localRotas.filter((_, i) => i !== index);
+    setLocalRotas(updated);
+    setActiveWeekIndex(0);
+  };
+
+  const handleSave = () => {
+    // Reverse Engineering: Calculate the Anchor Date based on user's selection
+    // If user says "Today is Week 2" (index 1), we set Anchor Date to 1 week ago.
+    const today = new Date();
+    const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 }); // Monday of this week
+    
+    // We subtract the selected index to find when "Week 1" (Index 0) would have started
+    const newAnchorDate = subWeeks(startOfCurrentWeek, currentWeekSelection);
+    const newAnchorStr = format(newAnchorDate, 'yyyy-MM-dd');
+
+    onSave(localRotas, newAnchorStr);
   };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden">
-        <div className="p-6 border-b border-slate-800 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings size={20} /> Work Schedule</h2>
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900 sticky top-0 z-10">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings size={20} /> Rota Settings</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
         </div>
-        <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-          <p className="text-sm text-slate-400 mb-4">Set your typical shift times. "End of Day" will use these times automatically.</p>
-          {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => (
-            <div key={day} className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-              <div className="w-24 capitalize text-sm font-medium text-slate-200">{day}</div>
-              
-              {!localSchedule[day].isOff ? (
-                <>
-                  <input type="time" value={localSchedule[day].start} onChange={(e) => handleChange(day, 'start', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" />
-                  <span className="text-slate-500">-</span>
-                  <input type="time" value={localSchedule[day].end} onChange={(e) => handleChange(day, 'end', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" />
-                </>
-              ) : (
-                 <span className="flex-1 text-center text-xs text-slate-500 uppercase tracking-wider font-bold">Day Off</span>
-              )}
-              
+
+        {/* --- ROTA SYNC UI --- */}
+        <div className="bg-indigo-500/10 border-b border-indigo-500/20 p-4">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-bold text-indigo-200 flex items-center gap-2"><RefreshCw size={14}/> Sync Current Week</span>
+                <span className="text-xs text-indigo-300/60">{format(new Date(), 'd MMM yyyy')}</span>
+            </div>
+            <div className="flex items-center gap-3">
+                <span className="text-sm text-slate-300">This week is:</span>
+                <div className="relative flex-1">
+                    <select 
+                        value={currentWeekSelection} 
+                        onChange={(e) => setCurrentWeekSelection(Number(e.target.value))}
+                        className="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 appearance-none cursor-pointer focus:border-indigo-500 focus:outline-none"
+                    >
+                        {localRotas.map((_, idx) => (
+                            <option key={idx} value={idx}>Week {idx + 1}</option>
+                        ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                </div>
+            </div>
+        </div>
+
+        {/* Week Tabs */}
+        <div className="flex items-center gap-2 px-6 pt-4 pb-2 overflow-x-auto scrollbar-hide">
+          {localRotas.map((_, idx) => (
+            <div key={idx} className="flex items-center">
               <button 
-                onClick={() => handleChange(day, 'isOff', !localSchedule[day].isOff)}
-                className={`px-3 py-1 rounded text-xs font-bold transition ${localSchedule[day].isOff ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}
+                onClick={() => setActiveWeekIndex(idx)}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${activeWeekIndex === idx ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
               >
-                {localSchedule[day].isOff ? 'OFF' : 'ON'}
+                Edit Week {idx + 1}
               </button>
+              {localRotas.length > 1 && activeWeekIndex === idx && (
+                <button onClick={() => removeWeek(idx)} className="ml-1 p-1 text-rose-400 hover:bg-rose-500/10 rounded-full" title="Remove Week">
+                  <X size={12} />
+                </button>
+              )}
             </div>
           ))}
+          <button onClick={addWeek} className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-indigo-500 transition" title="Add Week Cycle">
+            <Plus size={14} />
+          </button>
         </div>
-        <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3">
+
+        <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => {
+            const currentSchedule = localRotas[activeWeekIndex] || DEFAULT_WEEK;
+            const dayData = currentSchedule[day] || DEFAULT_WEEK.monday;
+
+            return (
+              <div key={day} className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                <div className="w-24 capitalize text-sm font-medium text-slate-200">{day}</div>
+                
+                {!dayData.isOff ? (
+                  <>
+                    <input type="time" value={dayData.start} onChange={(e) => handleChange(day, 'start', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" />
+                    <span className="text-slate-500">-</span>
+                    <input type="time" value={dayData.end} onChange={(e) => handleChange(day, 'end', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" />
+                  </>
+                ) : (
+                   <span className="flex-1 text-center text-xs text-slate-500 uppercase tracking-wider font-bold">Day Off</span>
+                )}
+                
+                <button 
+                  onClick={() => handleChange(day, 'isOff', !dayData.isOff)}
+                  className={`px-3 py-1 rounded text-xs font-bold transition ${dayData.isOff ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}
+                >
+                  {dayData.isOff ? 'OFF' : 'ON'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0">
           <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
-          <button onClick={() => onSave(localSchedule)} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2">
-            <Save size={16} /> Save Schedule
+          <button onClick={handleSave} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2">
+            <Save size={16} /> Save Rota
           </button>
         </div>
       </motion.div>
@@ -152,7 +261,7 @@ const ScheduleSettings = ({ isOpen, onClose, schedule, onSave }: any) => {
 
 // --- TASK ITEM COMPONENT ---
 const TaskItem = ({ 
-  todo, now, editingId, editForm, setEditForm, saveEdit, startEditing, deleteTodo, toggleComplete, privacyMode, setEditingId, updateStatus, schedule
+  todo, now, editingId, editForm, setEditForm, saveEdit, startEditing, deleteTodo, toggleComplete, privacyMode, setEditingId, updateStatus, rotas, anchorDate
 }: any) => {
   
   const [isEditTimeOpen, setIsEditTimeOpen] = useState(false);
@@ -162,14 +271,12 @@ const TaskItem = ({
     ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM') 
     : 'Now';
 
-  // Safely handle missing status/priority
   const currentStatus = todo.status || 'todo'; 
   const currentPriority = todo.priority || 'medium';
 
   const applyEndOfDay = () => {
-    // If we have a due date in the form, use it, otherwise use todo.dueDate, otherwise today
     const targetDate = editForm.dueDate || todo.dueDate || format(new Date(), 'yyyy-MM-dd');
-    const shiftEnd = getShiftEndTime(targetDate, schedule);
+    const shiftEnd = getShiftEndTime(targetDate, rotas, anchorDate);
     setEditForm({ ...editForm, dueTime: shiftEnd });
     setIsEditTimeOpen(false);
   };
@@ -296,7 +403,8 @@ const TaskItem = ({
 export default function Dashboard({ user }: DashboardProps) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list'); 
-  const [schedule, setSchedule] = useState<WeeklySchedule>(DEFAULT_SCHEDULE);
+  const [rotas, setRotas] = useState<RotaSystem>([DEFAULT_WEEK]); 
+  const [anchorDate, setAnchorDate] = useState<string>(''); // Stores the "Week 1 Start Date"
   
   // Input State
   const [input, setInput] = useState('');
@@ -353,12 +461,14 @@ export default function Dashboard({ user }: DashboardProps) {
       setIsLoading(false);
     });
     
-    // Fetch User Settings (Categories & Schedule)
+    // Fetch User Settings
     onSnapshot(doc(db, "users", user.uid), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
         if (data.categories) setCategories(data.categories);
-        if (data.schedule) setSchedule(data.schedule);
+        if (data.rotas) setRotas(data.rotas); 
+        else if (data.schedule) setRotas([data.schedule]);
+        if (data.anchorDate) setAnchorDate(data.anchorDate);
       }
     });
     
@@ -410,8 +520,8 @@ export default function Dashboard({ user }: DashboardProps) {
   }, [todos, searchQuery, now]);
 
   // --- ACTIONS ---
-  const saveSchedule = async (newSchedule: WeeklySchedule) => {
-    await setDoc(doc(db, "users", user.uid), { schedule: newSchedule }, { merge: true });
+  const saveRotas = async (newRotas: RotaSystem, newAnchorDate: string) => {
+    await setDoc(doc(db, "users", user.uid), { rotas: newRotas, anchorDate: newAnchorDate }, { merge: true });
     setIsSettingsOpen(false);
   };
 
@@ -453,18 +563,18 @@ export default function Dashboard({ user }: DashboardProps) {
   const setDueToday = () => setDueDate(format(new Date(), 'yyyy-MM-dd'));
   const applyEndOfDay = () => {
     const targetDate = dueDate || format(new Date(), 'yyyy-MM-dd');
-    setDueTime(getShiftEndTime(targetDate, schedule));
+    setDueTime(getShiftEndTime(targetDate, rotas, anchorDate));
     setIsTimeOpen(false);
   };
 
   return (
     <div className="max-w-6xl mx-auto mt-6 px-4 pb-24">
-      <ScheduleSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} schedule={schedule} onSave={saveSchedule} />
+      <ScheduleSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSave={saveRotas} />
 
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v2.1</span></h1>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v3.1 (Sync)</span></h1>
           <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
             <Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span>
           </div>
@@ -550,7 +660,7 @@ export default function Dashboard({ user }: DashboardProps) {
                 {sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.list.overdue.length})
               </button>
               <AnimatePresence>
-                {sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</motion.div>}
+                {sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}
               </AnimatePresence>
             </div>
           )}
@@ -560,7 +670,7 @@ export default function Dashboard({ user }: DashboardProps) {
                {sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Soon ({groupedTodos.list.soon.length})
             </button>
             <AnimatePresence>
-              {sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</motion.div>}
+              {sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}
             </AnimatePresence>
           </div>
 
@@ -569,7 +679,7 @@ export default function Dashboard({ user }: DashboardProps) {
                {sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later ({groupedTodos.list.later.length})
             </button>
             <AnimatePresence>
-              {sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</motion.div>}
+              {sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}
             </AnimatePresence>
           </div>
 
@@ -579,7 +689,7 @@ export default function Dashboard({ user }: DashboardProps) {
                  {sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed ({groupedTodos.list.completed.length})
               </button>
               <AnimatePresence>
-                {sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</motion.div>}
+                {sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}
               </AnimatePresence>
             </div>
           )}
@@ -591,19 +701,19 @@ export default function Dashboard({ user }: DashboardProps) {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 overflow-x-auto pb-4">
            <div className="space-y-3">
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Circle size={14} /> To Do ({groupedTodos.board.todo.length})</h3>
-              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.todo.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</div>
+              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.todo.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div>
            </div>
            <div className="space-y-3">
               <h3 className="text-sm font-bold text-sky-400 uppercase tracking-wider flex items-center gap-2"><Activity size={14} /> In Progress ({groupedTodos.board.inProgress.length})</h3>
-              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.inProgress.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</div>
+              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.inProgress.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div>
            </div>
            <div className="space-y-3">
               <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2"><Hourglass size={14} /> Waiting ({groupedTodos.board.waiting.length})</h3>
-              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</div>
+              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div>
            </div>
            <div className="space-y-3">
               <h3 className="text-sm font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2"><CheckCircle2 size={14} /> Done ({groupedTodos.board.done.length})</h3>
-              <div className="space-y-2 min-h-[200px] opacity-70">{groupedTodos.board.done.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</div>
+              <div className="space-y-2 min-h-[200px] opacity-70">{groupedTodos.board.done.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div>
            </div>
         </div>
       )}
