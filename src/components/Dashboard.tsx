@@ -512,6 +512,17 @@ export default function Dashboard({ user }: DashboardProps) {
         const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${start}&timeMax=${end}&singleEvents=true&orderBy=startTime`, {
           headers: { Authorization: `Bearer ${token}` }
         });
+        
+        if (!res.ok) {
+            // If token expired (401), remove it
+            if (res.status === 401) {
+                console.warn("Google Token Expired");
+                localStorage.removeItem(`google_token_${user.uid}`);
+                setGoogleConnected(false);
+            }
+            return;
+        }
+
         const data = await res.json();
         if (data.items) {
           const events = data.items.map((e: any) => ({
@@ -572,15 +583,18 @@ export default function Dashboard({ user }: DashboardProps) {
 
   const handleConnectGoogle = async () => {
     try {
+      // Force a popup to get a fresh token
       const result = await signInWithPopup(auth, googleProvider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       const token = credential?.accessToken;
+      
       if (token) {
         localStorage.setItem(`google_token_${user.uid}`, token);
+        // Immediately try to load events
         loadCalendarEvents('google', token);
       }
     } catch (error) {
-      console.error(error);
+      console.error("Google Connect Error:", error);
     }
   };
 
