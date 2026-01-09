@@ -2,14 +2,14 @@ import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
+// Use environment variables (Vite requires import.meta.env)
 const firebaseConfig = {
-    apiKey: "AIzaSyC0v1NHS7x995fI-j9GspTOd-wTeRhxu6w",
-    authDomain: "workflow-2026.firebaseapp.com",
-    projectId: "workflow-2026",
-    storageBucket: "workflow-2026.firebasestorage.app",
-    messagingSenderId: "362728778124",
-    appId: "1:362728778124:web:80f9ffa1fab4a427f14ea9",
-    measurementId: "G-LY38WZW496"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -18,6 +18,6 @@ export const db = getFirestore(app);
 
 // Configure Google Provider
 export const googleProvider = new GoogleAuthProvider();
-// These scopes are REQUIRED for the calendar to work
+// Required scopes for Calendar integration
 googleProvider.addScope('https://www.googleapis.com/auth/calendar.readonly');
 googleProvider.addScope('https://www.googleapis.com/auth/calendar.events.readonly');

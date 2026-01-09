@@ -607,8 +607,16 @@ export default function Dashboard({ user }: DashboardProps) {
   };
 
   const handleConnectOutlook = () => {
-    const CLIENT_ID = "4011de3a-f635-4cfd-96ca-556cc1980fca"; // REPLACE THIS
-    const REDIRECT_URI = "https://to-do-list-35e.pages.dev/"; 
+    // USE THE ENVIRONMENT VARIABLE
+    const CLIENT_ID = import.meta.env.VITE_MICROSOFT_CLIENT_ID; 
+    
+    // Safety check
+    if (!CLIENT_ID) {
+      alert("Missing Microsoft Client ID in .env file");
+      return;
+    }
+
+    const REDIRECT_URI = "http://localhost:5173"; 
     const SCOPES = "Calendars.Read";
     window.location.href = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${REDIRECT_URI}&scope=${SCOPES}`;
   };
