@@ -664,7 +664,7 @@ export default function Dashboard({ user }: DashboardProps) {
 
   const handleConnectOutlook = () => {
     const CLIENT_ID = import.meta.env.VITE_MICROSOFT_CLIENT_ID; 
-    const REDIRECT_URI = "http://localhost:5173"; 
+    const REDIRECT_URI = "https://to-do-list-35e.pages.dev/"; 
     const SCOPES = "Calendars.Read";
     window.location.href = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${REDIRECT_URI}&scope=${SCOPES}`;
   };
