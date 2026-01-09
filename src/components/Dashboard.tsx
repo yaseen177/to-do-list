@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { db, auth, googleProvider } from '../firebase';
+import { db, auth } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { signOut, updatePassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import type { User } from 'firebase/auth';
@@ -514,11 +514,13 @@ export default function Dashboard({ user }: DashboardProps) {
         });
         
         if (!res.ok) {
-            // If token expired (401), remove it
             if (res.status === 401) {
                 console.warn("Google Token Expired");
                 localStorage.removeItem(`google_token_${user.uid}`);
                 setGoogleConnected(false);
+            } else if (res.status === 403) {
+                console.warn("API Not Enabled");
+                alert("Google Calendar API is not enabled. Please enable it in Google Cloud Console.");
             }
             return;
         }
@@ -583,18 +585,24 @@ export default function Dashboard({ user }: DashboardProps) {
 
   const handleConnectGoogle = async () => {
     try {
-      // Force a popup to get a fresh token
-      const result = await signInWithPopup(auth, googleProvider);
+      // FORCE A NEW PROVIDER INSTANCE TO ENSURE SCOPES ARE PRESENT
+      const provider = new GoogleAuthProvider();
+      provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
+      provider.addScope('https://www.googleapis.com/auth/calendar.events.readonly');
+      
+      const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       const token = credential?.accessToken;
       
       if (token) {
         localStorage.setItem(`google_token_${user.uid}`, token);
-        // Immediately try to load events
         loadCalendarEvents('google', token);
+      } else {
+        alert("Failed to retrieve Google Access Token. Please try again.");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Google Connect Error:", error);
+      alert(`Connection failed: ${error.message}`);
     }
   };
 

@@ -16,7 +16,8 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// Configure Google Provider with Calendar Scopes
+// Configure Google Provider
 export const googleProvider = new GoogleAuthProvider();
+// These scopes are REQUIRED for the calendar to work
 googleProvider.addScope('https://www.googleapis.com/auth/calendar.readonly');
 googleProvider.addScope('https://www.googleapis.com/auth/calendar.events.readonly');
