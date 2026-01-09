@@ -2,15 +2,10 @@
 export default {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}"  // <--- The magic fix is adding 'ts' and 'tsx' here
+    "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  DARKmODE: 'class',
   theme: {
-    extend: {
-      fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'], // This fixes the Times New Roman font
-      },
-    },
+    extend: {},
   },
   plugins: [],
 }

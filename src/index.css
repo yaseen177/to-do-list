@@ -2,32 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Smooth transition for theme switching */
-html {
-  transition: background-color 0.3s ease, color 0.3s ease;
+/* FORCE DARK THEME */
+:root {
+  color-scheme: dark;
 }
 
-/* Default (Light Mode) Background */
 body {
-  @apply bg-slate-100 text-slate-900;
+  /* This is the dark background color (slate-950) */
+  background-color: #020617; 
+  /* This is the light text color (slate-100) */
+  color: #f1f5f9;
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
 }
 
-/* Dark Mode Background */
-.dark body {
-  @apply bg-slate-950 text-slate-100;
-}
-
-/* Scrollbar Styling (Optional Polish) */
+/* Custom Scrollbar to match Dark Mode */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-300 dark:bg-slate-700 rounded-full;
+  background-color: #334155; /* slate-700 */
+  border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-400 dark:bg-slate-600;
+  background-color: #475569; /* slate-600 */
+}
+
+/* Hide scrollbar for Chrome/Safari/Opera in specific areas */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
