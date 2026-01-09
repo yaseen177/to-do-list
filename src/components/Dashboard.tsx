@@ -109,12 +109,15 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
   // Category State
   const [localCategories, setLocalCategories] = useState<string[]>(categories || []);
   const [newCat, setNewCat] = useState('');
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle'); // <--- NEW STATE
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
 
   // Password State
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordMsg, setPasswordMsg] = useState({ text: '', type: '' });
+
+  // Detect Login Type
+  const isGoogleAuth = user.providerData.some((p: any) => p.providerId === 'google.com');
 
   useEffect(() => {
     if (rotas) setLocalRotas(rotas);
@@ -161,23 +164,13 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
     setLocalCategories(localCategories.filter(c => c !== cat));
   };
 
-  // --- UPDATED SAVE HANDLER ---
   const handleSaveCategories = async () => {
-    setSaveStatus('saving'); // Show spinner
+    setSaveStatus('saving');
     try {
       await setDoc(doc(db, "users", user.uid), { categories: localCategories }, { merge: true });
-      setSaveStatus('success'); // Show Green Check
-      
-      // Close modal after 1 second so user sees the success message
-      setTimeout(() => {
-        setSaveStatus('idle');
-        onClose();
-      }, 1000);
-      
-    } catch (e) { 
-      console.error(e); 
-      setSaveStatus('idle');
-    }
+      setSaveStatus('success');
+      setTimeout(() => { setSaveStatus('idle'); onClose(); }, 1000);
+    } catch (e) { console.error(e); setSaveStatus('idle'); }
   };
 
   // --- PASSWORD HANDLER ---
@@ -197,13 +190,11 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
         
-        {/* Header */}
         <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900 sticky top-0 z-10">
           <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings size={20} /> Settings</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-slate-800">
           <button onClick={() => setActiveTab('rota')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'rota' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Rota</button>
           <button onClick={() => setActiveTab('categories')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'categories' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Categories</button>
@@ -247,23 +238,14 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
           <div className="flex-1 flex flex-col min-h-0">
             <div className="p-6 space-y-6 overflow-y-auto flex-1">
               <div className="flex gap-2">
-                <input 
-                  value={newCat} 
-                  onChange={(e) => setNewCat(e.target.value)} 
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-                  placeholder="New Category Name..." 
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:border-indigo-500 outline-none"
-                />
+                <input value={newCat} onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()} placeholder="New Category Name..." className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:border-indigo-500 outline-none"/>
                 <button onClick={handleAddCategory} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg"><Plus size={20}/></button>
               </div>
-              
               <div className="space-y-2">
                 {localCategories.map(cat => (
                   <div key={cat} className="flex items-center justify-between p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg group">
                     <span className="text-slate-200 text-sm font-medium">{cat}</span>
-                    <button onClick={() => handleRemoveCategory(cat)} className="text-slate-500 hover:text-rose-400 transition opacity-0 group-hover:opacity-100">
-                      <Trash2 size={16} />
-                    </button>
+                    <button onClick={() => handleRemoveCategory(cat)} className="text-slate-500 hover:text-rose-400 transition opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
                   </div>
                 ))}
                 {localCategories.length === 0 && <div className="text-center text-slate-500 text-sm py-4">No categories set.</div>}
@@ -271,39 +253,45 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
             </div>
             <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0">
               <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Close</button>
-              
-              <button 
-                onClick={handleSaveCategories} 
-                disabled={saveStatus !== 'idle'}
-                className={`px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${
-                  saveStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                }`}
-              >
-                {saveStatus === 'saving' ? (
-                  <>Saving...</> 
-                ) : saveStatus === 'success' ? (
-                  <><Check size={16}/> Saved!</>
-                ) : (
-                  <><Save size={16}/> Save Categories</>
-                )}
+              <button onClick={handleSaveCategories} disabled={saveStatus !== 'idle'} className={`px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${saveStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
+                {saveStatus === 'saving' ? <>Saving...</> : saveStatus === 'success' ? <><Check size={16}/> Saved!</> : <><Save size={16}/> Save Categories</>}
               </button>
             </div>
           </div>
         )}
 
-        {/* --- ACCOUNT TAB --- */}
+        {/* --- ACCOUNT TAB (CONDITIONAL) --- */}
         {activeTab === 'account' && (
           <div className="p-6 space-y-6 overflow-y-auto flex-1">
              <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
-                <h3 className="text-white font-bold flex items-center gap-2 mb-4"><Lock size={18} className="text-indigo-400"/> Change Password</h3>
-                <div className="space-y-4">
-                   <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" placeholder="New Password" />
-                   <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" placeholder="Confirm Password" />
-                   {passwordMsg.text && <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{passwordMsg.text}</div>}
-                   <button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition">Update</button>
-                </div>
+                <h3 className="text-white font-bold flex items-center gap-2 mb-4"><Lock size={18} className="text-indigo-400"/> Authentication</h3>
+                
+                {/* CONDITIONAL UI BASED ON PROVIDER */}
+                {isGoogleAuth ? (
+                  <div className="flex flex-col items-center justify-center py-4 space-y-3">
+                    <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg">
+                      <img src="https://www.google.com/favicon.ico" alt="Google" className="w-6 h-6" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-white font-medium">Connected with Google</p>
+                      <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Password & Security are managed via your Google Account.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                     <label className="text-xs text-slate-400 uppercase font-bold tracking-wider">Change Password</label>
+                     <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="New Password" />
+                     <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="Confirm Password" />
+                     {passwordMsg.text && <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{passwordMsg.text}</div>}
+                     <button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition">Update Password</button>
+                  </div>
+                )}
              </div>
-             <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30"><h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3><p className="text-xs text-slate-500 leading-relaxed">Your data is stored securely in compliance with UK GDPR standards.</p></div>
+             
+             <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30">
+                <h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">Your data is stored securely in compliance with UK GDPR standards.</p>
+             </div>
           </div>
         )}
       </motion.div>
