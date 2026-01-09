@@ -4,7 +4,6 @@ import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc
 import { signOut, updatePassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-// FIX 1: Added AlertCircle to imports
 import { CheckCircle2, Circle, Trash2, Plus, Calendar as CalendarIcon, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, ChevronLeft, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Sun, Layers, Globe, Link2, StickyNote, Undo2, AlertCircle } from 'lucide-react';
 import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, differenceInCalendarWeeks, startOfWeek, subWeeks, addDays, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 
@@ -237,14 +236,12 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
           </>
         )}
 
-        {/* --- CATEGORIES TAB --- */}
         {activeTab === 'categories' && (
           <>
             <div className="flex-1 flex flex-col min-h-0"><div className="p-6 space-y-6 overflow-y-auto flex-1"><div className="flex gap-2"><input value={newCat} onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()} placeholder="New Category Name..." className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-800 dark:text-white focus:border-indigo-500 outline-none"/><button onClick={handleAddCategory} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg"><Plus size={20}/></button></div><div className="space-y-2">{localCategories.map(cat => (<div key={cat} className="flex items-center justify-between p-3 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-lg group"><span className="text-slate-700 dark:text-slate-200 text-sm font-medium">{cat}</span><button onClick={() => handleRemoveCategory(cat)} className="text-slate-400 hover:text-rose-500 transition opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button></div>))}{localCategories.length === 0 && <div className="text-center text-slate-500 text-sm py-4">No categories set.</div>}</div></div></div><div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white">Close</button><button onClick={handleSaveCategories} disabled={saveStatus !== 'idle'} className={`px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${saveStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>{saveStatus === 'saving' ? <>Saving...</> : saveStatus === 'success' ? <><Check size={16}/> Saved!</> : <><Save size={16}/> Save Categories</>}</button></div>
           </>
         )}
 
-        {/* --- ACCOUNT TAB --- */}
         {activeTab === 'account' && (
           <div className="p-6 space-y-6 overflow-y-auto flex-1">
              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/50"><h3 className="text-slate-800 dark:text-white font-bold flex items-center gap-2 mb-4"><Lock size={18} className="text-indigo-500"/> Authentication</h3>{isGoogleAuth ? (<div className="flex flex-col items-center justify-center py-4 space-y-3"><div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg"><img src="https://www.google.com/favicon.ico" alt="Google" className="w-6 h-6" /></div><div className="text-center"><p className="text-slate-800 dark:text-white font-medium">Connected with Google</p><p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-[200px]">Password & Security are managed via your Google Account.</p></div></div>) : (<div className="space-y-4"><label className="text-xs text-slate-500 uppercase font-bold tracking-wider">Change Password</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-800 dark:text-white text-sm focus:border-indigo-500 outline-none" placeholder="New Password" /><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-800 dark:text-white text-sm focus:border-indigo-500 outline-none" placeholder="Confirm Password" />{passwordMsg.text && <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400'}`}>{passwordMsg.text}</div>}<button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-200 dark:bg-slate-700 hover:bg-indigo-600 hover:text-white text-slate-700 dark:text-white rounded-lg text-sm font-medium transition">Update Password</button></div>)}</div>
@@ -367,7 +364,7 @@ const TaskItem = ({ todo, now, onEdit, deleteTodo, toggleComplete, privacyMode, 
       initial={{ opacity: 0, y: 10 }} 
       animate={{ opacity: 1, y: 0 }} 
       exit={{ opacity: 0, scale: 0.95 }} 
-      className={`p-3 flex flex-col sm:flex-row sm:items-start justify-between group border-l-4 mb-3 rounded-lg shadow-sm backdrop-blur-md transition-all cursor-grab active:cursor-grabbing ${
+      className={`glass-panel p-3 flex flex-col sm:flex-row sm:items-start justify-between group border-l-4 mb-3 rounded-lg shadow-sm backdrop-blur-md transition-all cursor-grab active:cursor-grabbing ${
         todo.completed 
           ? 'border-l-slate-400 bg-slate-100 dark:bg-slate-900/40 opacity-60' 
           : currentPriority === 'high' 
@@ -462,9 +459,6 @@ export default function Dashboard({ user }: DashboardProps) {
   const [isManagerOpen, setIsManagerOpen] = useState(false);
   const [editTask, setEditTask] = useState<Todo | null>(null);
   
-  // THEME STATE
-  const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') !== 'light');
-
   // TOAST STATE
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
 
@@ -492,14 +486,6 @@ export default function Dashboard({ user }: DashboardProps) {
   const dateRef = useRef<HTMLDivElement>(null);
   const catRef = useRef<HTMLDivElement>(null);
   const prioRef = useRef<HTMLDivElement>(null);
-
-  // --- THEME EFFECT ---
-  useEffect(() => {
-    const root = window.document.documentElement;
-    if (isDark) root.classList.add('dark');
-    else root.classList.remove('dark');
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
 
   useEffect(() => {
     const clickOut = (e: MouseEvent) => {
@@ -776,7 +762,6 @@ export default function Dashboard({ user }: DashboardProps) {
     await deleteDoc(doc(db, 'todos', id));
     
     addToast("Task deleted", "info", async () => {
-      // Undo logic: Restore the document
       await setDoc(doc(db, 'todos', id), taskToDelete);
       addToast("Task restored", "success");
     });
@@ -818,8 +803,8 @@ export default function Dashboard({ user }: DashboardProps) {
   };
 
   return (
-    <div className="max-w-6xl mx-auto mt-6 px-4 pb-24 text-slate-800 dark:text-slate-100 transition-colors duration-300">
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} categories={categories} isDark={isDark} setIsDark={setIsDark} />
+    <div className="max-w-6xl mx-auto mt-6 px-4 pb-24 text-slate-100">
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} categories={categories} />
       <EditTaskModal isOpen={!!editTask} onClose={() => setEditTask(null)} todo={editTask} onSave={saveTaskChanges} onDelete={deleteTodo} categories={categories} rotas={rotas} anchorDate={anchorDate} />
       <CalendarManagerModal isOpen={isManagerOpen} onClose={() => setIsManagerOpen(false)} outlookConnected={outlookConnected} outlookExpired={outlookExpired} googleConnected={googleConnected} onConnectOutlook={handleConnectOutlook} onConnectGoogle={handleConnectGoogle} onDisconnect={handleDisconnectCalendar} calendars={externalCalendars} toggleCalendar={toggleCalendar} />
       
@@ -828,49 +813,49 @@ export default function Dashboard({ user }: DashboardProps) {
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-500/30">v10.0</span></h1>
-          <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 mt-1 text-sm"><Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span></div>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v10.0</span></h1>
+          <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm"><Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span></div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex bg-white dark:bg-slate-800/50 rounded-lg p-1 border border-slate-200 dark:border-slate-700/50">
-            <button onClick={() => setViewMode('list')} className={`p-2 rounded transition ${viewMode==='list'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-slate-600 dark:hover:text-white'}`}><LayoutTemplate size={18} /></button>
-            <button onClick={() => setViewMode('board')} className={`p-2 rounded transition ${viewMode==='board'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-slate-600 dark:hover:text-white'}`}><KanbanSquare size={18} /></button>
-            <button onClick={() => setViewMode('calendar')} className={`p-2 rounded transition ${viewMode==='calendar'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-slate-600 dark:hover:text-white'}`}><CalendarIcon size={18} /></button>
+          <div className="flex bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
+            <button onClick={() => setViewMode('list')} className={`p-2 rounded transition ${viewMode==='list'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><LayoutTemplate size={18} /></button>
+            <button onClick={() => setViewMode('board')} className={`p-2 rounded transition ${viewMode==='board'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><KanbanSquare size={18} /></button>
+            <button onClick={() => setViewMode('calendar')} className={`p-2 rounded transition ${viewMode==='calendar'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><CalendarIcon size={18} /></button>
           </div>
-          <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-white transition" title="Settings"><Settings size={20} /></button>
-          <div className="relative group hidden sm:block"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} /><input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-indigo-500 w-[180px]" /></div>
-          <button onClick={() => setPrivacyMode(!privacyMode)} className={`p-2 rounded-lg border transition ${privacyMode ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 border-indigo-300 dark:border-indigo-500 dark:text-indigo-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-white'}`}>{privacyMode ? <EyeOff size={20} /> : <Eye size={20} />}</button>
-          <button onClick={handleSignOut} className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-500 hover:bg-rose-500 hover:text-white dark:bg-rose-500/10 dark:border-rose-500/30 dark:text-rose-400 dark:hover:bg-rose-500 dark:hover:text-white transition ml-2" title="Sign Out"><LogOut size={20} /></button>
+          <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 transition" title="Settings"><Settings size={20} /></button>
+          <div className="relative group hidden sm:block"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} /><input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="bg-slate-800/50 border border-slate-700 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-indigo-500 w-[180px]" /></div>
+          <button onClick={() => setPrivacyMode(!privacyMode)} className={`p-2 rounded-lg border transition ${privacyMode ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>{privacyMode ? <EyeOff size={20} /> : <Eye size={20} />}</button>
+          <button onClick={handleSignOut} className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500 hover:text-white transition ml-2" title="Sign Out"><LogOut size={20} /></button>
         </div>
       </header>
 
       {/* SENTENCE BUILDER UI */}
       <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-8 relative z-30">
-        <form onSubmit={addTodo} className="p-6 bg-white/70 dark:bg-slate-900/80 backdrop-blur-xl border border-indigo-200 dark:border-indigo-500/40 rounded-2xl shadow-xl dark:shadow-2xl text-lg md:text-xl leading-relaxed text-slate-600 dark:text-slate-300 font-light relative group transition-colors duration-300">
+        <form onSubmit={addTodo} className="p-6 bg-gradient-to-br from-indigo-900/40 to-slate-900/80 backdrop-blur-xl border border-indigo-500/40 rounded-2xl shadow-2xl ring-1 ring-indigo-500/20 text-lg md:text-xl leading-relaxed text-slate-300 font-light relative group">
           
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-4">
             <span>In</span>
             <div className="relative inline-block" ref={catRef}>
-              <button type="button" onClick={() => setIsCatOpen(!isCatOpen)} className="font-bold text-indigo-600 dark:text-indigo-300 border-b-2 border-indigo-200 dark:border-indigo-500/30 hover:border-indigo-400 transition-colors cursor-pointer flex items-center gap-1">{category} <ChevronDown size={14} className="opacity-50"/></button>
-              {isCatOpen && (<div className="absolute top-full left-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal">{categories.map(c => <button key={c} type="button" onClick={() => { setCategory(c); setIsCatOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300">{c}</button>)}</div>)}
+              <button type="button" onClick={() => setIsCatOpen(!isCatOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors cursor-pointer flex items-center gap-1">{category} <ChevronDown size={14} className="opacity-50"/></button>
+              {isCatOpen && (<div className="absolute top-full left-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal">{categories.map(c => <button key={c} type="button" onClick={() => { setCategory(c); setIsCatOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-slate-300">{c}</button>)}</div>)}
             </div>
             <span>, I need to</span>
-            <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="describe the task..." className="bg-transparent border-b-2 border-indigo-200 dark:border-indigo-500/30 focus:border-indigo-400 outline-none text-slate-900 dark:text-white font-medium placeholder-slate-400 dark:placeholder-indigo-500/30 min-w-[200px] flex-grow transition-all"/>
+            <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="describe the task..." className="bg-transparent border-b-2 border-indigo-500/30 focus:border-indigo-400 outline-none text-white font-medium placeholder-indigo-500/30 min-w-[200px] flex-grow transition-all"/>
             <span>for</span>
-            <div className="relative inline-flex items-center"><UserIcon size={18} className="absolute left-0 text-slate-400 dark:text-slate-500" /><input value={patientInput} onChange={(e) => setPatientInput(e.target.value)} placeholder="patient name..." className="bg-transparent border-b-2 border-indigo-200 dark:border-indigo-500/30 focus:border-indigo-400 outline-none text-slate-900 dark:text-white font-bold placeholder-slate-400 dark:placeholder-indigo-500/30 pl-6 w-[180px] transition-all"/></div>
+            <div className="relative inline-flex items-center"><UserIcon size={18} className="absolute left-0 text-slate-500" /><input value={patientInput} onChange={(e) => setPatientInput(e.target.value)} placeholder="patient name..." className="bg-transparent border-b-2 border-indigo-500/30 focus:border-indigo-400 outline-none text-white font-bold placeholder-indigo-500/30 pl-6 w-[180px] transition-all"/></div>
             <span>by</span>
             {/* DATE & TIME SELECTORS */}
             {!dueDate ? (
-              <div className="relative inline-block" ref={dateRef}><button type="button" onClick={() => setIsSmartDateOpen(!isSmartDateOpen)} className="font-bold text-indigo-600 dark:text-indigo-300 border-b-2 border-indigo-200 dark:border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">📅 Set Deadline <ChevronDown size={14} className="opacity-50"/></button>{isSmartDateOpen && (<div className="absolute top-full left-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal"><button onClick={() => setSmartDeadline('today')} className="w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/5 text-amber-500 dark:text-amber-300 flex items-center gap-2"><Moon size={14}/> End of Today</button><button onClick={() => setSmartDeadline('tomorrow')} className="w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/5 text-sky-500 dark:text-sky-300 flex items-center gap-2"><Sun size={14}/> End of Tomorrow</button><div className="h-[1px] bg-slate-200 dark:bg-slate-700 my-1"></div><button onClick={() => { setDueDate(format(new Date(), 'yyyy-MM-dd')); setIsSmartDateOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-600 dark:text-slate-300 flex items-center gap-2"><CalendarIcon size={14}/> Custom Date...</button></div>)}</div>
-            ) : (<><div className="relative inline-block group/date"><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="bg-transparent text-indigo-600 dark:text-indigo-300 font-bold border-b-2 border-indigo-200 dark:border-indigo-500/30 focus:border-indigo-400 outline-none cursor-pointer w-[130px] uppercase text-sm"/></div><div className="relative inline-block" ref={timeRef}><button type="button" onClick={() => setIsTimeOpen(!isTimeOpen)} className="font-bold text-indigo-600 dark:text-indigo-300 border-b-2 border-indigo-200 dark:border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">{dueTime || "TIME"} <Clock size={14} className="opacity-50"/></button>{isTimeOpen && (<div className="absolute top-full left-0 mt-2 w-[140px] max-h-[200px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 text-sm font-normal"><button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-500 dark:text-amber-300 hover:bg-slate-100 dark:hover:bg-white/5 border-b border-slate-100 dark:border-white/5 flex items-center gap-2"><Moon size={12}/> End of Day</button><button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border-b border-slate-100 dark:border-white/5">No time</button>{TIME_SLOTS.map(t => <button key={t} type="button" onClick={() => { setDueTime(t); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 text-slate-700 dark:text-slate-300">{t}</button>)}</div>)}</div><button onClick={() => { setDueDate(''); setDueTime(''); }} className="ml-2 p-1 text-slate-400 hover:text-rose-500 transition"><X size={14}/></button></>)}
+              <div className="relative inline-block" ref={dateRef}><button type="button" onClick={() => setIsSmartDateOpen(!isSmartDateOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">📅 Set Deadline <ChevronDown size={14} className="opacity-50"/></button>{isSmartDateOpen && (<div className="absolute top-full left-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal"><button onClick={() => setSmartDeadline('today')} className="w-full text-left px-4 py-2 hover:bg-white/5 text-amber-300 flex items-center gap-2"><Moon size={14}/> End of Today</button><button onClick={() => setSmartDeadline('tomorrow')} className="w-full text-left px-4 py-2 hover:bg-white/5 text-sky-300 flex items-center gap-2"><Sun size={14}/> End of Tomorrow</button><div className="h-[1px] bg-slate-700 my-1"></div><button onClick={() => { setDueDate(format(new Date(), 'yyyy-MM-dd')); setIsSmartDateOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-slate-300 flex items-center gap-2"><CalendarIcon size={14}/> Custom Date...</button></div>)}</div>
+            ) : (<><div className="relative inline-block group/date"><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="bg-transparent text-indigo-300 font-bold border-b-2 border-indigo-500/30 focus:border-indigo-400 outline-none cursor-pointer w-[130px] uppercase text-sm"/></div><div className="relative inline-block" ref={timeRef}><button type="button" onClick={() => setIsTimeOpen(!isTimeOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">{dueTime || "TIME"} <Clock size={14} className="opacity-50"/></button>{isTimeOpen && (<div className="absolute top-full left-0 mt-2 w-[140px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 text-sm font-normal"><button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2"><Moon size={12}/> End of Day</button><button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>{TIME_SLOTS.map(t => <button key={t} type="button" onClick={() => { setDueTime(t); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-indigo-500/20 text-slate-300">{t}</button>)}</div>)}</div><button onClick={() => { setDueDate(''); setDueTime(''); }} className="ml-2 p-1 text-slate-500 hover:text-rose-400 transition"><X size={14}/></button></>)}
             <span>with</span>
             {/* PRIORITY SELECTOR */}
-            <div className="relative inline-block" ref={prioRef}><button type="button" onClick={() => setIsPriorityOpen(!isPriorityOpen)} className={`font-bold border-b-2 border-dashed transition-colors flex items-center gap-1 ${priority === 'high' ? 'text-rose-500 dark:text-rose-400 border-rose-500/50' : priority === 'medium' ? 'text-amber-500 dark:text-amber-400 border-amber-500/50' : 'text-slate-500 dark:text-slate-400 border-slate-400 dark:border-slate-600'}`}>{priority.toUpperCase()} <Flag size={14} fill={priority === 'high' ? "currentColor" : "none"}/></button>{isPriorityOpen && (<div className="absolute top-full left-0 mt-2 w-32 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal">{['low', 'medium', 'high'].map(p => (<button key={p} type="button" onClick={()=>{setPriority(p as any); setIsPriorityOpen(false)}} className={`w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/5 capitalize ${p==='high'?'text-rose-500':p==='medium'?'text-amber-500':'text-slate-500'}`}>{p}</button>))}</div>)}</div>
+            <div className="relative inline-block" ref={prioRef}><button type="button" onClick={() => setIsPriorityOpen(!isPriorityOpen)} className={`font-bold border-b-2 border-dashed transition-colors flex items-center gap-1 ${priority === 'high' ? 'text-rose-400 border-rose-500/50' : priority === 'medium' ? 'text-amber-400 border-amber-500/50' : 'text-slate-400 border-slate-600'}`}>{priority.toUpperCase()} <Flag size={14} fill={priority === 'high' ? "currentColor" : "none"}/></button>{isPriorityOpen && (<div className="absolute top-full left-0 mt-2 w-32 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal">{['low', 'medium', 'high'].map(p => (<button key={p} type="button" onClick={()=>{setPriority(p as any); setIsPriorityOpen(false)}} className={`w-full text-left px-4 py-2 hover:bg-white/5 capitalize ${p==='high'?'text-rose-400':p==='medium'?'text-amber-400':'text-slate-400'}`}>{p}</button>))}</div>)}</div>
             <span>priority.</span>
           </div>
           <button type="submit" className="absolute bottom-6 right-6 bg-indigo-600 hover:bg-indigo-500 text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg shadow-indigo-500/30 transition-transform active:scale-90 group-hover:scale-110"><Plus size={24} /></button>
         </form>
-        <div className="flex gap-2 mt-4 overflow-x-auto pb-2 scrollbar-hide px-2"><span className="text-xs font-bold text-slate-500 uppercase tracking-wider py-1.5 mr-2 flex items-center gap-1"><Tag size={12}/> Quick Add:</span>{QUICK_TEMPLATES.map(tmpl => (<button key={tmpl} onClick={() => setInput(tmpl + ' ')} className="text-xs font-medium bg-white dark:bg-slate-800/50 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700/50 hover:border-indigo-300 dark:hover:border-indigo-500/30 transition whitespace-nowrap">{tmpl}</button>))}</div>
+        <div className="flex gap-2 mt-4 overflow-x-auto pb-2 scrollbar-hide px-2"><span className="text-xs font-bold text-slate-500 uppercase tracking-wider py-1.5 mr-2 flex items-center gap-1"><Tag size={12}/> Quick Add:</span>{QUICK_TEMPLATES.map(tmpl => (<button key={tmpl} onClick={() => setInput(tmpl + ' ')} className="text-xs font-medium bg-slate-800/50 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-300 px-3 py-1.5 rounded-lg border border-slate-700/50 hover:border-indigo-500/30 transition whitespace-nowrap">{tmpl}</button>))}</div>
       </motion.div>
 
       {/* --- VIEWS --- */}
@@ -879,20 +864,20 @@ export default function Dashboard({ user }: DashboardProps) {
           {isLoading && <div className="text-center text-slate-500 py-10">Loading...</div>}
           {groupedTodos.list.overdue.length > 0 && (
             <div className="space-y-2">
-              <button onClick={() => toggleSection('overdue')} className="flex items-center gap-2 text-rose-500 dark:text-rose-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.list.overdue.length})</button>
+              <button onClick={() => toggleSection('overdue')} className="flex items-center gap-2 text-rose-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.list.overdue.length})</button>
               <AnimatePresence>{sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence>
             </div>
           )}
           <div className="space-y-2">
-            <button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-500 dark:text-amber-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Soon ({groupedTodos.list.soon.length})</button>
+            <button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Soon ({groupedTodos.list.soon.length})</button>
             <AnimatePresence>{sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence>
           </div>
           <div className="space-y-2">
-            <button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-500 dark:text-indigo-300 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later ({groupedTodos.list.later.length})</button>
+            <button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-300 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later ({groupedTodos.list.later.length})</button>
             <AnimatePresence>{sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence>
           </div>
           {groupedTodos.list.completed.length > 0 && (
-            <div className="space-y-2 pt-6 border-t border-slate-200 dark:border-white/5">
+            <div className="space-y-2 pt-6 border-t border-white/5">
               <button onClick={() => toggleSection('completed')} className="flex items-center gap-2 text-slate-500 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed ({groupedTodos.list.completed.length})</button>
               <AnimatePresence>{sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}</motion.div>}</AnimatePresence>
             </div>
@@ -919,7 +904,7 @@ export default function Dashboard({ user }: DashboardProps) {
              onDragOver={handleDragOver} 
              onDrop={(e) => handleDrop(e, 'in-progress')}
            >
-             <h3 className="text-sm font-bold text-sky-500 uppercase tracking-wider flex items-center gap-2"><Activity size={14} /> In Progress ({groupedTodos.board.inProgress.length})</h3>
+             <h3 className="text-sm font-bold text-sky-400 uppercase tracking-wider flex items-center gap-2"><Activity size={14} /> In Progress ({groupedTodos.board.inProgress.length})</h3>
              {groupedTodos.board.inProgress.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}
            </div>
 
@@ -929,7 +914,7 @@ export default function Dashboard({ user }: DashboardProps) {
              onDragOver={handleDragOver} 
              onDrop={(e) => handleDrop(e, 'waiting')}
            >
-             <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wider flex items-center gap-2"><Hourglass size={14} /> Waiting ({groupedTodos.board.waiting.length})</h3>
+             <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2"><Hourglass size={14} /> Waiting ({groupedTodos.board.waiting.length})</h3>
              {groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} />)}
            </div>
 
@@ -952,11 +937,11 @@ export default function Dashboard({ user }: DashboardProps) {
       )}
 
       {/* FOOTER */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 p-2 z-50 transition-all duration-300">
-         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            <div className="flex gap-4 min-w-fit"><span className="flex items-center gap-1"><LayoutTemplate size={14}/> Total: <strong className="text-slate-800 dark:text-white">{stats.total}</strong></span><span className="flex items-center gap-1 text-rose-500 dark:text-rose-400"><Flag size={14}/> Urgent: <strong className="text-rose-600 dark:text-rose-300">{stats.urgent}</strong></span><span className="flex items-center gap-1 text-amber-500 dark:text-amber-400"><Hourglass size={14}/> Waiting: <strong className="text-amber-600 dark:text-amber-300">{stats.waiting}</strong></span></div>
-            <div className="flex-1 flex gap-3 overflow-x-auto scrollbar-hide px-4 mask-fade-sides justify-center max-w-full">{Object.entries(categoryStats).map(([cat, count]) => (<span key={cat} className="flex items-center gap-1 whitespace-nowrap text-slate-600 dark:text-slate-500 text-[10px] sm:text-xs"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span> {cat}: <strong className="text-slate-800 dark:text-slate-300">{count}</strong></span>))}</div>
-            <div className="flex flex-col items-end gap-0.5 min-w-fit text-right"><div className="flex items-center gap-1 text-emerald-500"><CheckCircle2 size={14} /> Done Today: <strong className="text-emerald-600 dark:text-emerald-400">{stats.completedToday}</strong></div><div className="text-[9px] text-slate-400 dark:text-slate-600 font-medium">Created by Yaseen Hussain &copy; 2026</div></div>
+      <div className="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 p-2 z-50 transition-all duration-300">
+         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm text-slate-400">
+            <div className="flex gap-4 min-w-fit"><span className="flex items-center gap-1"><LayoutTemplate size={14}/> Total: <strong className="text-white">{stats.total}</strong></span><span className="flex items-center gap-1 text-rose-400"><Flag size={14}/> Urgent: <strong className="text-rose-300">{stats.urgent}</strong></span><span className="flex items-center gap-1 text-amber-400"><Hourglass size={14}/> Waiting: <strong className="text-amber-300">{stats.waiting}</strong></span></div>
+            <div className="flex-1 flex gap-3 overflow-x-auto scrollbar-hide px-4 mask-fade-sides justify-center max-w-full">{Object.entries(categoryStats).map(([cat, count]) => (<span key={cat} className="flex items-center gap-1 whitespace-nowrap text-slate-500 text-[10px] sm:text-xs"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span> {cat}: <strong className="text-slate-300">{count}</strong></span>))}</div>
+            <div className="flex flex-col items-end gap-0.5 min-w-fit text-right"><div className="flex items-center gap-1 text-emerald-500"><CheckCircle2 size={14} /> Done Today: <strong className="text-emerald-400">{stats.completedToday}</strong></div><div className="text-[9px] text-slate-600 font-medium">Created by Yaseen Hussain &copy; 2026</div></div>
          </div>
       </div>
     </div>
