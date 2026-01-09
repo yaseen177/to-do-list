@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { db, auth } from '../firebase'; // <--- Added auth here
+import { db, auth } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { signOut, updatePassword } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag } from 'lucide-react';
-import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, differenceInCalendarWeeks, startOfWeek, subWeeks } from 'date-fns';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Zap, Sun } from 'lucide-react';
+import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, differenceInCalendarWeeks, startOfWeek, subWeeks, addDays } from 'date-fns';
 
 // --- TYPES ---
 interface Todo {
@@ -311,6 +311,7 @@ export default function Dashboard({ user }: DashboardProps) {
 
   // UI State
   const [isCatOpen, setIsCatOpen] = useState(false);
+  const [isSmartDateOpen, setIsSmartDateOpen] = useState(false);
   const [isTimeOpen, setIsTimeOpen] = useState(false);
   const [isPriorityOpen, setIsPriorityOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -328,12 +329,14 @@ export default function Dashboard({ user }: DashboardProps) {
 
   // Refs for click outside
   const timeRef = useRef<HTMLDivElement>(null);
+  const dateRef = useRef<HTMLDivElement>(null);
   const catRef = useRef<HTMLDivElement>(null);
   const prioRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const clickOut = (e: MouseEvent) => {
       if (timeRef.current && !timeRef.current.contains(e.target as Node)) setIsTimeOpen(false);
+      if (dateRef.current && !dateRef.current.contains(e.target as Node)) setIsSmartDateOpen(false);
       if (catRef.current && !catRef.current.contains(e.target as Node)) setIsCatOpen(false);
       if (prioRef.current && !prioRef.current.contains(e.target as Node)) setIsPriorityOpen(false);
     };
@@ -454,11 +457,12 @@ export default function Dashboard({ user }: DashboardProps) {
     setEditingId(null);
   };
 
-  // setDueToday REMOVED to fix unused var error
-  const applyEndOfDay = () => {
-    const targetDate = dueDate || format(new Date(), 'yyyy-MM-dd');
-    setDueTime(getShiftEndTime(targetDate, rotas, anchorDate));
-    setIsTimeOpen(false);
+  const setSmartDeadline = (type: 'today' | 'tomorrow') => {
+    const targetDate = type === 'today' ? new Date() : addDays(new Date(), 1);
+    const dateStr = format(targetDate, 'yyyy-MM-dd');
+    setDueDate(dateStr);
+    setDueTime(getShiftEndTime(dateStr, rotas, anchorDate));
+    setIsSmartDateOpen(false);
   };
 
   return (
@@ -468,7 +472,7 @@ export default function Dashboard({ user }: DashboardProps) {
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v5.0</span></h1>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v6.0</span></h1>
           <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
             <Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span>
           </div>
@@ -495,7 +499,7 @@ export default function Dashboard({ user }: DashboardProps) {
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-4">
             <span>In</span>
             
-            {/* CATEGORY SELECTOR */}
+            {/* CATEGORY */}
             <div className="relative inline-block" ref={catRef}>
               <button type="button" onClick={() => setIsCatOpen(!isCatOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors cursor-pointer flex items-center gap-1">
                 {category} <ChevronDown size={14} className="opacity-50"/>
@@ -509,7 +513,6 @@ export default function Dashboard({ user }: DashboardProps) {
 
             <span>, I need to</span>
 
-            {/* TASK INPUT */}
             <input 
               value={input} 
               onChange={(e) => setInput(e.target.value)} 
@@ -519,7 +522,6 @@ export default function Dashboard({ user }: DashboardProps) {
 
             <span>for</span>
 
-            {/* PATIENT INPUT */}
             <div className="relative inline-flex items-center">
               <UserIcon size={18} className="absolute left-0 text-slate-500" />
               <input 
@@ -532,34 +534,50 @@ export default function Dashboard({ user }: DashboardProps) {
 
             <span>by</span>
 
-            {/* DATE PICKER */}
-            <div className="relative inline-block group/date">
-               <input 
-                 type="date" 
-                 value={dueDate} 
-                 onChange={(e) => setDueDate(e.target.value)} 
-                 className="bg-transparent text-indigo-300 font-bold border-b-2 border-indigo-500/30 focus:border-indigo-400 outline-none cursor-pointer w-[130px] uppercase text-sm"
-               />
-               {!dueDate && <span className="absolute left-0 top-0 text-indigo-500/30 pointer-events-none font-bold">DATE</span>}
-            </div>
-
-            {/* TIME PICKER */}
-            <div className="relative inline-block" ref={timeRef}>
-               <button type="button" onClick={() => setIsTimeOpen(!isTimeOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">
-                 {dueTime || "TIME"} <Clock size={14} className="opacity-50"/>
-               </button>
-               {isTimeOpen && (
-                 <div className="absolute top-full left-0 mt-2 w-[140px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 text-sm font-normal">
-                   <button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2"><Moon size={12}/> End of Day</button>
-                   <button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>
-                   {TIME_SLOTS.map(t => <button key={t} type="button" onClick={() => { setDueTime(t); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-indigo-500/20 text-slate-300">{t}</button>)}
-                 </div>
-               )}
-            </div>
+            {/* SMART DATE SELECTOR */}
+            {!dueDate ? (
+              <div className="relative inline-block" ref={dateRef}>
+                <button type="button" onClick={() => setIsSmartDateOpen(!isSmartDateOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">
+                  📅 Set Deadline <ChevronDown size={14} className="opacity-50"/>
+                </button>
+                {isSmartDateOpen && (
+                  <div className="absolute top-full left-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-1 text-sm font-normal">
+                    <button onClick={() => setSmartDeadline('today')} className="w-full text-left px-4 py-2 hover:bg-white/5 text-amber-300 flex items-center gap-2"><Moon size={14}/> End of Today</button>
+                    <button onClick={() => setSmartDeadline('tomorrow')} className="w-full text-left px-4 py-2 hover:bg-white/5 text-sky-300 flex items-center gap-2"><Sun size={14}/> End of Tomorrow</button>
+                    <div className="h-[1px] bg-slate-700 my-1"></div>
+                    <button onClick={() => { setDueDate(format(new Date(), 'yyyy-MM-dd')); setIsSmartDateOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-slate-300 flex items-center gap-2"><Calendar size={14}/> Custom Date...</button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // IF DATE IS SET -> SHOW MANUAL INPUTS
+              <>
+                <div className="relative inline-block group/date">
+                   <input 
+                     type="date" 
+                     value={dueDate} 
+                     onChange={(e) => setDueDate(e.target.value)} 
+                     className="bg-transparent text-indigo-300 font-bold border-b-2 border-indigo-500/30 focus:border-indigo-400 outline-none cursor-pointer w-[130px] uppercase text-sm"
+                   />
+                </div>
+                <div className="relative inline-block" ref={timeRef}>
+                   <button type="button" onClick={() => setIsTimeOpen(!isTimeOpen)} className="font-bold text-indigo-300 border-b-2 border-indigo-500/30 hover:border-indigo-400 transition-colors flex items-center gap-1 uppercase text-sm">
+                     {dueTime || "TIME"} <Clock size={14} className="opacity-50"/>
+                   </button>
+                   {isTimeOpen && (
+                     <div className="absolute top-full left-0 mt-2 w-[140px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 text-sm font-normal">
+                       <button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>
+                       {TIME_SLOTS.map(t => <button key={t} type="button" onClick={() => { setDueTime(t); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-indigo-500/20 text-slate-300">{t}</button>)}
+                     </div>
+                   )}
+                </div>
+                <button onClick={() => { setDueDate(''); setDueTime(''); }} className="ml-2 p-1 text-slate-500 hover:text-rose-400 transition"><X size={14}/></button>
+              </>
+            )}
 
             <span>with</span>
 
-            {/* PRIORITY SELECTOR */}
+            {/* PRIORITY */}
             <div className="relative inline-block" ref={prioRef}>
                <button type="button" onClick={() => setIsPriorityOpen(!isPriorityOpen)} className={`font-bold border-b-2 border-dashed transition-colors flex items-center gap-1 ${priority === 'high' ? 'text-rose-400 border-rose-500/50' : priority === 'medium' ? 'text-amber-400 border-amber-500/50' : 'text-slate-400 border-slate-600'}`}>
                  {priority.toUpperCase()} <Flag size={14} fill={priority === 'high' ? "currentColor" : "none"}/>
