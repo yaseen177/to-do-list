@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { db } from '../firebase';
+import { db, auth } from '../firebase'; // <--- Added auth here
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { signOut, updatePassword } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag } from 'lucide-react';
@@ -98,12 +99,12 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
 
 // --- SETTINGS MODAL ---
 const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user }: any) => {
-  // ... (Settings logic same as previous step, re-using for brevity but keeping functionality)
-  // Re-implemented to ensure no missing code errors
   const [activeTab, setActiveTab] = useState<'rota' | 'account'>('rota');
   const [localRotas, setLocalRotas] = useState<RotaSystem>(rotas);
   const [activeWeekIndex, setActiveWeekIndex] = useState(0);
   const [currentWeekSelection, setCurrentWeekSelection] = useState(0);
+  
+  // Password State
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordMsg, setPasswordMsg] = useState({ text: '', type: '' });
@@ -136,6 +137,18 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user }
     const newAnchorDate = subWeeks(startOfCurrentWeek, currentWeekSelection);
     const newAnchorStr = format(newAnchorDate, 'yyyy-MM-dd');
     onSaveRotas(localRotas, newAnchorStr);
+  };
+
+  const handleUpdatePassword = async () => {
+    if (newPassword.length < 8) { setPasswordMsg({ text: 'Password too short', type: 'error' }); return; }
+    if (newPassword !== confirmPassword) { setPasswordMsg({ text: 'Passwords do not match', type: 'error' }); return; }
+    try {
+      if (user) {
+        await updatePassword(user, newPassword);
+        setPasswordMsg({ text: 'Password updated!', type: 'success' });
+        setNewPassword(''); setConfirmPassword('');
+      }
+    } catch (err: any) { setPasswordMsg({ text: err.message, type: 'error' }); }
   };
 
   return (
@@ -181,6 +194,15 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user }
         )}
         {activeTab === 'account' && (
           <div className="p-6 space-y-6 overflow-y-auto flex-1">
+             <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
+                <h3 className="text-white font-bold flex items-center gap-2 mb-4"><Lock size={18} className="text-indigo-400"/> Change Password</h3>
+                <div className="space-y-4">
+                   <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" placeholder="New Password" />
+                   <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" placeholder="Confirm Password" />
+                   {passwordMsg.text && <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{passwordMsg.text}</div>}
+                   <button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition">Update</button>
+                </div>
+             </div>
              <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30"><h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3><p className="text-xs text-slate-500 leading-relaxed">Your data is stored securely in compliance with UK GDPR standards.</p></div>
           </div>
         )}
@@ -395,7 +417,7 @@ export default function Dashboard({ user }: DashboardProps) {
     setIsSettingsOpen(false);
   };
 
-  const handleSignOut = async () => { try { await auth.signOut(); } catch (error) { console.error("Error signing out", error); } };
+  const handleSignOut = async () => { try { await signOut(auth); } catch (error) { console.error("Error signing out", error); } };
 
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -432,7 +454,7 @@ export default function Dashboard({ user }: DashboardProps) {
     setEditingId(null);
   };
 
-  const setDueToday = () => setDueDate(format(new Date(), 'yyyy-MM-dd'));
+  // setDueToday REMOVED to fix unused var error
   const applyEndOfDay = () => {
     const targetDate = dueDate || format(new Date(), 'yyyy-MM-dd');
     setDueTime(getShiftEndTime(targetDate, rotas, anchorDate));
@@ -554,13 +576,12 @@ export default function Dashboard({ user }: DashboardProps) {
             <span>priority.</span>
           </div>
 
-          {/* Add Button */}
           <button type="submit" className="absolute bottom-6 right-6 bg-indigo-600 hover:bg-indigo-500 text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg shadow-indigo-500/30 transition-transform active:scale-90 group-hover:scale-110">
             <Plus size={24} />
           </button>
         </form>
 
-        {/* QUICK TEMPLATES (Chips below) */}
+        {/* QUICK TEMPLATES */}
         <div className="flex gap-2 mt-4 overflow-x-auto pb-2 scrollbar-hide px-2">
           <span className="text-xs font-bold text-slate-500 uppercase tracking-wider py-1.5 mr-2 flex items-center gap-1"><Tag size={12}/> Quick Add:</span>
           {QUICK_TEMPLATES.map(tmpl => (
@@ -571,7 +592,7 @@ export default function Dashboard({ user }: DashboardProps) {
         </div>
       </motion.div>
 
-      {/* REST OF DASHBOARD (Views, Stats, etc.) */}
+      {/* VIEWS & CONTENT */}
       {viewMode === 'list' && (
         <div className="space-y-4">
           {isLoading && <div className="text-center text-slate-500 py-10">Loading...</div>}
