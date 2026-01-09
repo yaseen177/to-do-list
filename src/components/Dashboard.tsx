@@ -457,12 +457,23 @@ export default function Dashboard({ user }: DashboardProps) {
       setIsLoading(false);
     });
     
+    // Fetch User Settings
     onSnapshot(doc(db, "users", user.uid), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (data.categories) setCategories(data.categories);
+        
+        // 1. Load Categories & Set Default
+        if (data.categories && data.categories.length > 0) {
+           setCategories(data.categories);
+           // FIX: Auto-select the first category from the user's list
+           setCategory(data.categories[0]); 
+        }
+
+        // 2. Load Rotas
         if (data.rotas) setRotas(data.rotas); 
         else if (data.schedule) setRotas([data.schedule]);
+        
+        // 3. Load Anchor Date
         if (data.anchorDate) setAnchorDate(data.anchorDate);
       }
     });
