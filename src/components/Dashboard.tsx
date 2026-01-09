@@ -497,6 +497,47 @@ export default function Dashboard({ user }: DashboardProps) {
     return () => { clearInterval(timer); unsub(); };
   }, [user]);
 
+  // --- HANDLE MICROSOFT REDIRECT ---
+  useEffect(() => {
+    // Check if URL has a hash (Microsoft returns token in hash)
+    if (window.location.hash.includes("access_token")) {
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      const accessToken = params.get("access_token");
+
+      if (accessToken) {
+        // Clear hash to clean up URL
+        window.history.replaceState(null, "", " ");
+        
+        // Fetch Events using the token
+        const fetchOutlookEvents = async () => {
+          try {
+            const res = await fetch("https://graph.microsoft.com/v1.0/me/calendar/events", {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            const data = await res.json();
+            
+            if (data.value) {
+              const events = data.value.map((e: any) => ({
+                id: e.id,
+                title: e.subject,
+                start: new Date(e.start.dateTime),
+                end: new Date(e.end.dateTime),
+                source: 'outlook',
+                color: 'sky'
+              }));
+              setOutlookEvents(events);
+              setOutlookConnected(true);
+            }
+          } catch (err) {
+            console.error("Outlook API Error:", err);
+          }
+        };
+        fetchOutlookEvents();
+      }
+    }
+  }, []);
+
   // --- STATS ---
   const stats = useMemo(() => {
     return {
