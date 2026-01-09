@@ -97,6 +97,41 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
   return parts.length > 0 ? parts.join(' ') : 'Just now';
 };
 
+// --- EDIT TASK MODAL ---
+const EditTaskModal = ({ isOpen, onClose, todo, onSave, onDelete, categories, rotas, anchorDate }: any) => {
+  const [form, setForm] = useState(todo || {});
+  useEffect(() => { if (todo) setForm(todo); }, [todo]);
+  if (!isOpen || !todo) return null;
+
+  const handleSave = () => { onSave(todo.id, form); onClose(); };
+  const setSmartTime = (type: 'today' | 'tomorrow') => {
+    const date = type === 'today' ? new Date() : addDays(new Date(), 1);
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const timeStr = getShiftEndTime(dateStr, rotas, anchorDate);
+    setForm({ ...form, dueDate: dateStr, dueTime: timeStr });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="p-5 border-b border-slate-800 flex justify-between items-center"><h2 className="text-lg font-bold text-white flex items-center gap-2"><Pencil size={18} /> Edit Task</h2><button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button></div>
+        <div className="p-6 space-y-5">
+          <div className="flex gap-4">
+            <div className="flex-1 space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Category</label><div className="relative"><select value={form.category} onChange={e => setForm({...form, category: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm appearance-none outline-none focus:border-indigo-500">{categories.map((c: string) => <option key={c} value={c}>{c}</option>)}</select><ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" /></div></div>
+            <div className="flex-1 space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Priority</label><div className="flex bg-slate-800 rounded-lg p-1 border border-slate-700">{['low', 'medium', 'high'].map(p => (<button key={p} onClick={() => setForm({...form, priority: p})} className={`flex-1 py-1.5 text-xs font-bold uppercase rounded transition ${form.priority === p ? (p==='high'?'bg-rose-500/20 text-rose-400':p==='medium'?'bg-amber-500/20 text-amber-400':'bg-blue-500/20 text-blue-400') : 'text-slate-500 hover:text-slate-300'}`}>{p}</button>))}</div></div>
+          </div>
+          <div className="space-y-3">
+            <div className="relative"><UserIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><input value={form.patientName} onChange={e => setForm({...form, patientName: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white placeholder-slate-600 focus:border-indigo-500 outline-none" placeholder="Patient Name" /></div>
+            <textarea value={form.text} onChange={e => setForm({...form, text: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white placeholder-slate-600 focus:border-indigo-500 outline-none h-24 resize-none" placeholder="Task description..." />
+          </div>
+          <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Deadline</label><div className="flex gap-2"><input type="date" value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})} className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500" /><input type="time" value={form.dueTime} onChange={e => setForm({...form, dueTime: e.target.value})} className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500" /><button onClick={() => setSmartTime('today')} className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-amber-400 hover:bg-white/5" title="End of Today"><Moon size={18}/></button><button onClick={() => setSmartTime('tomorrow')} className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-sky-400 hover:bg-white/5" title="End of Tomorrow"><Sun size={18}/></button></div></div>
+        </div>
+        <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-between items-center"><button onClick={() => { if(confirm('Delete this task?')) { onDelete(todo.id); onClose(); } }} className="text-rose-400 hover:bg-rose-500/10 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2"><Trash2 size={16}/> Delete</button><div className="flex gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button><button onClick={handleSave} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium">Save Changes</button></div></div>
+      </motion.div>
+    </div>
+  );
+};
+
 // --- SETTINGS MODAL ---
 const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories }: any) => {
   const [activeTab, setActiveTab] = useState<'rota' | 'categories' | 'account'>('rota');
@@ -232,7 +267,7 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
 };
 
 // --- CALENDAR VIEW COMPONENT ---
-const CalendarView = ({ todos, currentDate, setCurrentDate }: any) => {
+const CalendarView = ({ todos, currentDate, setCurrentDate, onEdit }: any) => {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
   const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -272,9 +307,9 @@ const CalendarView = ({ todos, currentDate, setCurrentDate }: any) => {
               </div>
               <div className="flex-1 flex flex-col gap-1 mt-1 overflow-y-auto max-h-[80px] scrollbar-hide">
                 {daysTasks.map((t: Todo) => (
-                  <div key={t.id} className={`text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 ${t.completed ? 'opacity-40 line-through bg-slate-800 border-slate-600 text-slate-500' : t.priority === 'high' ? 'bg-rose-500/10 border-rose-500 text-rose-300' : t.priority === 'medium' ? 'bg-amber-500/10 border-amber-500 text-amber-300' : 'bg-blue-500/10 border-blue-500 text-blue-300'}`}>
+                  <button key={t.id} onClick={() => onEdit(t)} className={`text-left text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 hover:opacity-80 transition active:scale-95 ${t.completed ? 'opacity-40 line-through bg-slate-800 border-slate-600 text-slate-500' : t.priority === 'high' ? 'bg-rose-500/10 border-rose-500 text-rose-300' : t.priority === 'medium' ? 'bg-amber-500/10 border-amber-500 text-amber-300' : 'bg-blue-500/10 border-blue-500 text-blue-300'}`}>
                     {t.patientName ? <span className="font-bold mr-1">{t.patientName}</span> : null}{t.text}
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -285,52 +320,21 @@ const CalendarView = ({ todos, currentDate, setCurrentDate }: any) => {
   );
 };
 
-// --- TASK ITEM COMPONENT ---
-const TaskItem = ({ 
-  todo, now, editingId, editForm, setEditForm, saveEdit, startEditing, deleteTodo, toggleComplete, privacyMode, setEditingId, updateStatus, rotas, anchorDate
-}: any) => {
-  const [isEditTimeOpen, setIsEditTimeOpen] = useState(false);
+// --- TASK ITEM COMPONENT (READ ONLY) ---
+const TaskItem = ({ todo, now, onEdit, deleteTodo, toggleComplete, privacyMode, updateStatus }: any) => {
   const remaining = getTimeRemaining(todo.dueDate, todo.dueTime, now);
   const waiting = getTimeWaiting(todo.createdAt, now);
   const createdStr = todo.createdAt?.seconds ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM') : 'Now';
   const currentStatus = todo.status || 'todo'; 
   const currentPriority = todo.priority || 'medium';
 
-  const applyEndOfDay = () => {
-    const targetDate = editForm.dueDate || todo.dueDate || format(new Date(), 'yyyy-MM-dd');
-    const shiftEnd = getShiftEndTime(targetDate, rotas, anchorDate);
-    setEditForm({ ...editForm, dueTime: shiftEnd });
-    setIsEditTimeOpen(false);
-  };
-
   return (
     <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className={`glass-panel p-3 flex flex-col sm:flex-row sm:items-start justify-between group border-l-4 mb-3 ${todo.completed ? 'border-l-slate-600 opacity-60 bg-slate-900/40' : currentPriority === 'high' ? 'border-l-rose-500 shadow-rose-500/10' : 'border-l-indigo-500'}`}>
       <div className="flex items-start gap-3 w-full">
-        {editingId !== todo.id && (
-          <button onClick={() => toggleComplete(todo)} className="text-slate-500 hover:text-indigo-400 transition mt-1">
-            {todo.completed ? <CheckCircle2 className="text-emerald-500/80" size={22} /> : <Circle size={22} />}
-          </button>
-        )}
+        <button onClick={() => toggleComplete(todo)} className="text-slate-500 hover:text-indigo-400 transition mt-1">
+          {todo.completed ? <CheckCircle2 className="text-emerald-500/80" size={22} /> : <Circle size={22} />}
+        </button>
         <div className="flex-1 min-w-0">
-          {editingId === todo.id ? (
-            <div className="flex flex-col gap-2 w-full pr-12">
-                <div className="flex gap-2 relative">
-                  <input value={editForm.patientName} onChange={(e) => setEditForm({ ...editForm, patientName: e.target.value })} className="w-1/3 bg-slate-800/50 text-indigo-300 font-bold text-sm p-2 rounded border border-indigo-500/30 focus:outline-none" placeholder="Patient Name" />
-                  <input type="date" value={editForm.dueDate || ''} onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })} className="bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 w-[110px]" />
-                  <div className="relative">
-                    <button onClick={() => setIsEditTimeOpen(!isEditTimeOpen)} className="flex items-center gap-1 bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 w-[80px] justify-center">{editForm.dueTime || <Clock size={14}/>}</button>
-                    {isEditTimeOpen && (
-                      <div className="absolute top-full left-0 mt-1 w-[140px] max-h-[150px] overflow-y-auto bg-slate-800 border border-slate-700 rounded z-50">
-                         <button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2"><Moon size={12}/> End of Day</button>
-                         <button onClick={() => { setEditForm({...editForm, dueTime: ''}); setIsEditTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>
-                         {TIME_SLOTS.map(t => <button key={t} onClick={()=>{setEditForm({...editForm, dueTime:t}); setIsEditTimeOpen(false)}} className="w-full text-left px-2 py-1 text-xs hover:bg-white/10 text-slate-300">{t}</button>)}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <input value={editForm.text} onChange={(e) => setEditForm({ ...editForm, text: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && saveEdit(todo.id)} className="w-full bg-slate-800/50 text-white p-2 rounded border border-indigo-500/50 focus:outline-none" autoFocus />
-            </div>
-          ) : (
             <div className={`${privacyMode ? 'blur-md hover:blur-none select-none duration-500' : ''}`}>
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 {currentPriority === 'high' && <span className="animate-pulse text-rose-500"><AlertTriangle size={14} /></span>}
@@ -346,21 +350,11 @@ const TaskItem = ({
                 {todo.dueDate && <span className="text-slate-300 flex items-center gap-1"><CalendarIcon size={10} /> {format(parseISO(todo.dueDate), 'd MMM')} {todo.dueTime}</span>}
               </div>
             </div>
-          )}
         </div>
       </div>
       <div className="flex items-center gap-2 absolute top-3 right-3 sm:static sm:ml-4 self-start">
-        {editingId === todo.id ? (
-          <>
-            <button onClick={() => saveEdit(todo.id)} className="text-emerald-400 hover:bg-emerald-400/10 p-1.5 rounded transition"><Check size={16} /></button>
-            <button onClick={() => setEditingId(null)} className="text-rose-400 hover:bg-rose-400/10 p-1.5 rounded transition"><X size={16} /></button>
-          </>
-        ) : (
-          <>
-            <button onClick={() => startEditing(todo)} className="text-slate-500 hover:text-indigo-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 hover:bg-white/5 rounded"><Pencil size={16} /></button>
-            <button onClick={() => deleteTodo(todo.id)} className="text-slate-500 hover:text-rose-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 hover:bg-white/5 rounded"><Trash2 size={16} /></button>
-          </>
-        )}
+        <button onClick={() => onEdit(todo)} className="text-slate-500 hover:text-indigo-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 hover:bg-white/5 rounded"><Pencil size={16} /></button>
+        <button onClick={() => deleteTodo(todo.id)} className="text-slate-500 hover:text-rose-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 hover:bg-white/5 rounded"><Trash2 size={16} /></button>
       </div>
     </motion.div>
   );
@@ -390,11 +384,10 @@ export default function Dashboard({ user }: DashboardProps) {
   const [isTimeOpen, setIsTimeOpen] = useState(false);
   const [isPriorityOpen, setIsPriorityOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [editTask, setEditTask] = useState<Todo | null>(null);
 
   // General State
   const [now, setNow] = useState(new Date());
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ text: '', patientName: '', dueTime: '', dueDate: '' });
   const [privacyMode, setPrivacyMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -522,17 +515,12 @@ export default function Dashboard({ user }: DashboardProps) {
 
   const deleteTodo = async (id: string) => deleteDoc(doc(db, 'todos', id));
   
-  const startEditing = (todo: Todo) => {
-    setEditingId(todo.id);
-    setEditForm({ text: todo.text, patientName: todo.patientName || '', dueTime: todo.dueTime || '', dueDate: todo.dueDate || '' });
+  const openEditModal = (todo: Todo) => {
+    setEditTask(todo);
   };
   
-  const saveEdit = async (id: string) => {
-    if (!editForm.text.trim()) return;
-    await updateDoc(doc(db, 'todos', id), { 
-      text: editForm.text, patientName: editForm.patientName, dueTime: editForm.dueTime, dueDate: editForm.dueDate 
-    });
-    setEditingId(null);
+  const saveTaskChanges = async (id: string, updates: Partial<Todo>) => {
+    await updateDoc(doc(db, 'todos', id), updates);
   };
 
   const setSmartDeadline = (type: 'today' | 'tomorrow') => {
@@ -552,11 +540,12 @@ export default function Dashboard({ user }: DashboardProps) {
   return (
     <div className="max-w-6xl mx-auto mt-6 px-4 pb-24">
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} categories={categories} />
+      <EditTaskModal isOpen={!!editTask} onClose={() => setEditTask(null)} todo={editTask} onSave={saveTaskChanges} onDelete={deleteTodo} categories={categories} rotas={rotas} anchorDate={anchorDate} />
 
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v6.1</span></h1>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v7.1</span></h1>
           <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
             <Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span>
           </div>
@@ -703,21 +692,21 @@ export default function Dashboard({ user }: DashboardProps) {
           {groupedTodos.list.overdue.length > 0 && (
             <div className="space-y-2">
               <button onClick={() => toggleSection('overdue')} className="flex items-center gap-2 text-rose-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.list.overdue.length})</button>
-              <AnimatePresence>{sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
+              <AnimatePresence>{sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
             </div>
           )}
           <div className="space-y-2">
             <button onClick={() => toggleSection('soon')} className="flex items-center gap-2 text-amber-400 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Soon ({groupedTodos.list.soon.length})</button>
-            <AnimatePresence>{sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
+            <AnimatePresence>{sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
           </div>
           <div className="space-y-2">
             <button onClick={() => toggleSection('later')} className="flex items-center gap-2 text-indigo-300 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later ({groupedTodos.list.later.length})</button>
-            <AnimatePresence>{sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
+            <AnimatePresence>{sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
           </div>
           {groupedTodos.list.completed.length > 0 && (
             <div className="space-y-2 pt-6 border-t border-white/5">
               <button onClick={() => toggleSection('completed')} className="flex items-center gap-2 text-slate-500 font-bold uppercase text-xs w-full hover:bg-white/5 p-2 rounded transition">{sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed ({groupedTodos.list.completed.length})</button>
-              <AnimatePresence>{sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
+              <AnimatePresence>{sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</motion.div>}</AnimatePresence>
             </div>
           )}
         </div>
@@ -725,15 +714,15 @@ export default function Dashboard({ user }: DashboardProps) {
 
       {viewMode === 'board' && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 overflow-x-auto pb-4">
-           <div className="space-y-3"><h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Circle size={14} /> To Do ({groupedTodos.board.todo.length})</h3><div className="space-y-2 min-h-[200px]">{groupedTodos.board.todo.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div></div>
-           <div className="space-y-3"><h3 className="text-sm font-bold text-sky-400 uppercase tracking-wider flex items-center gap-2"><Activity size={14} /> In Progress ({groupedTodos.board.inProgress.length})</h3><div className="space-y-2 min-h-[200px]">{groupedTodos.board.inProgress.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div></div>
-           <div className="space-y-3"><h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2"><Hourglass size={14} /> Waiting ({groupedTodos.board.waiting.length})</h3><div className="space-y-2 min-h-[200px]">{groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div></div>
-           <div className="space-y-3"><h3 className="text-sm font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2"><CheckCircle2 size={14} /> Done ({groupedTodos.board.done.length})</h3><div className="space-y-2 min-h-[200px] opacity-70">{groupedTodos.board.done.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div></div>
+           <div className="space-y-3"><h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Circle size={14} /> To Do ({groupedTodos.board.todo.length})</h3><div className="space-y-2 min-h-[200px]">{groupedTodos.board.todo.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div></div>
+           <div className="space-y-3"><h3 className="text-sm font-bold text-sky-400 uppercase tracking-wider flex items-center gap-2"><Activity size={14} /> In Progress ({groupedTodos.board.inProgress.length})</h3><div className="space-y-2 min-h-[200px]">{groupedTodos.board.inProgress.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div></div>
+           <div className="space-y-3"><h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2"><Hourglass size={14} /> Waiting ({groupedTodos.board.waiting.length})</h3><div className="space-y-2 min-h-[200px]">{groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div></div>
+           <div className="space-y-3"><h3 className="text-sm font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2"><CheckCircle2 size={14} /> Done ({groupedTodos.board.done.length})</h3><div className="space-y-2 min-h-[200px] opacity-70">{groupedTodos.board.done.map(t => <TaskItem key={t.id} todo={t} now={now} onEdit={openEditModal} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div></div>
         </div>
       )}
 
       {viewMode === 'calendar' && (
-        <CalendarView todos={todos} currentDate={calendarDate} setCurrentDate={setCalendarDate} />
+        <CalendarView todos={todos} currentDate={calendarDate} setCurrentDate={setCalendarDate} onEdit={openEditModal} />
       )}
 
       {/* FOOTER */}
