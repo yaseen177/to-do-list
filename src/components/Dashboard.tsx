@@ -4,7 +4,7 @@ import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc
 import { signOut, updatePassword } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar as CalendarIcon, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, ChevronLeft, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Sun } from 'lucide-react';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar as CalendarIcon, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, ChevronLeft, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Sun, Layers, Globe } from 'lucide-react';
 import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, differenceInCalendarWeeks, startOfWeek, subWeeks, addDays, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 
 // --- TYPES ---
@@ -20,6 +20,15 @@ interface Todo {
   dueDate: string;
   dueTime: string;
   createdAt: any; 
+}
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  source: 'google' | 'outlook';
+  color: string;
 }
 
 type DaySchedule = { start: string; end: string; isOff: boolean };
@@ -97,43 +106,8 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
   return parts.length > 0 ? parts.join(' ') : 'Just now';
 };
 
-// --- EDIT TASK MODAL ---
-const EditTaskModal = ({ isOpen, onClose, todo, onSave, onDelete, categories, rotas, anchorDate }: any) => {
-  const [form, setForm] = useState(todo || {});
-  useEffect(() => { if (todo) setForm(todo); }, [todo]);
-  if (!isOpen || !todo) return null;
-
-  const handleSave = () => { onSave(todo.id, form); onClose(); };
-  const setSmartTime = (type: 'today' | 'tomorrow') => {
-    const date = type === 'today' ? new Date() : addDays(new Date(), 1);
-    const dateStr = format(date, 'yyyy-MM-dd');
-    const timeStr = getShiftEndTime(dateStr, rotas, anchorDate);
-    setForm({ ...form, dueDate: dateStr, dueTime: timeStr });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-        <div className="p-5 border-b border-slate-800 flex justify-between items-center"><h2 className="text-lg font-bold text-white flex items-center gap-2"><Pencil size={18} /> Edit Task</h2><button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button></div>
-        <div className="p-6 space-y-5">
-          <div className="flex gap-4">
-            <div className="flex-1 space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Category</label><div className="relative"><select value={form.category} onChange={e => setForm({...form, category: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm appearance-none outline-none focus:border-indigo-500">{categories.map((c: string) => <option key={c} value={c}>{c}</option>)}</select><ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" /></div></div>
-            <div className="flex-1 space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Priority</label><div className="flex bg-slate-800 rounded-lg p-1 border border-slate-700">{['low', 'medium', 'high'].map(p => (<button key={p} onClick={() => setForm({...form, priority: p})} className={`flex-1 py-1.5 text-xs font-bold uppercase rounded transition ${form.priority === p ? (p==='high'?'bg-rose-500/20 text-rose-400':p==='medium'?'bg-amber-500/20 text-amber-400':'bg-blue-500/20 text-blue-400') : 'text-slate-500 hover:text-slate-300'}`}>{p}</button>))}</div></div>
-          </div>
-          <div className="space-y-3">
-            <div className="relative"><UserIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><input value={form.patientName} onChange={e => setForm({...form, patientName: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white placeholder-slate-600 focus:border-indigo-500 outline-none" placeholder="Patient Name" /></div>
-            <textarea value={form.text} onChange={e => setForm({...form, text: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white placeholder-slate-600 focus:border-indigo-500 outline-none h-24 resize-none" placeholder="Task description..." />
-          </div>
-          <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Deadline</label><div className="flex gap-2"><input type="date" value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})} className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500" /><input type="time" value={form.dueTime} onChange={e => setForm({...form, dueTime: e.target.value})} className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500" /><button onClick={() => setSmartTime('today')} className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-amber-400 hover:bg-white/5" title="End of Today"><Moon size={18}/></button><button onClick={() => setSmartTime('tomorrow')} className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-sky-400 hover:bg-white/5" title="End of Tomorrow"><Sun size={18}/></button></div></div>
-        </div>
-        <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-between items-center"><button onClick={() => { if(confirm('Delete this task?')) { onDelete(todo.id); onClose(); } }} className="text-rose-400 hover:bg-rose-500/10 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2"><Trash2 size={16}/> Delete</button><div className="flex gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button><button onClick={handleSave} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium">Save Changes</button></div></div>
-      </motion.div>
-    </div>
-  );
-};
-
 // --- SETTINGS MODAL ---
-const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories }: any) => {
+const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories, outlookConnected, onConnectOutlook }: any) => {
   const [activeTab, setActiveTab] = useState<'rota' | 'categories' | 'account'>('rota');
   const [localRotas, setLocalRotas] = useState<RotaSystem>(rotas);
   const [activeWeekIndex, setActiveWeekIndex] = useState(0);
@@ -258,6 +232,22 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
                   <div className="space-y-4"><label className="text-xs text-slate-400 uppercase font-bold tracking-wider">Change Password</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="New Password" /><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="Confirm Password" />{passwordMsg.text && <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{passwordMsg.text}</div>}<button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition">Update Password</button></div>
                 )}
              </div>
+             {/* EXTERNAL CALENDARS */}
+             <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
+                <h3 className="text-white font-bold flex items-center gap-2 mb-4"><Globe size={18} className="text-indigo-400"/> Connected Calendars</h3>
+                <div className="space-y-3">
+                   <button onClick={onConnectOutlook} className="w-full flex items-center justify-between p-3 bg-slate-900 border border-slate-700 rounded-lg hover:bg-slate-800 transition">
+                      <div className="flex items-center gap-3">
+                         <div className="w-8 h-8 bg-[#0078D4] rounded flex items-center justify-center text-white font-bold text-xs">O</div>
+                         <div className="text-left">
+                            <div className="text-sm font-bold text-white">Outlook Calendar</div>
+                            <div className="text-xs text-slate-500">{outlookConnected ? 'Connected' : 'Not connected'}</div>
+                         </div>
+                      </div>
+                      {outlookConnected ? <CheckCircle2 size={18} className="text-emerald-500"/> : <span className="text-xs text-indigo-400 font-bold">Connect</span>}
+                   </button>
+                </div>
+             </div>
              <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30"><h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3><p className="text-xs text-slate-500 leading-relaxed">Your data is stored securely in compliance with UK GDPR standards.</p></div>
           </div>
         )}
@@ -267,13 +257,14 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
 };
 
 // --- CALENDAR VIEW COMPONENT ---
-const CalendarView = ({ todos, currentDate, setCurrentDate, onEdit }: any) => {
+const CalendarView = ({ todos, currentDate, setCurrentDate, onEdit, googleEvents, outlookEvents, visibleCalendars, setVisibleCalendars }: any) => {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
   const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
   const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
   const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const allDays = eachDayOfInterval({ start: startDate, end: endDate });
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   return (
     <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl overflow-hidden shadow-xl">
@@ -286,6 +277,16 @@ const CalendarView = ({ todos, currentDate, setCurrentDate, onEdit }: any) => {
             <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-1 hover:bg-white/10 rounded"><ChevronRight size={20} className="text-slate-300" /></button>
           </div>
         </div>
+        <div className="relative">
+           <button onClick={() => setIsFilterOpen(!isFilterOpen)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition"><Layers size={14} /> Calendars</button>
+           {isFilterOpen && (
+             <div className="absolute top-full right-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-2">
+                <button onClick={() => setVisibleCalendars({...visibleCalendars, tasks: !visibleCalendars.tasks})} className="w-full text-left px-4 py-2 hover:bg-white/5 flex items-center gap-2 text-xs text-white">{visibleCalendars.tasks ? <CheckCircle2 size={14} className="text-indigo-400"/> : <Circle size={14} className="text-slate-500"/>} Tasks (Local)</button>
+                <button onClick={() => setVisibleCalendars({...visibleCalendars, google: !visibleCalendars.google})} className="w-full text-left px-4 py-2 hover:bg-white/5 flex items-center gap-2 text-xs text-white">{visibleCalendars.google ? <CheckCircle2 size={14} className="text-emerald-400"/> : <Circle size={14} className="text-slate-500"/>} Google Calendar</button>
+                <button onClick={() => setVisibleCalendars({...visibleCalendars, outlook: !visibleCalendars.outlook})} className="w-full text-left px-4 py-2 hover:bg-white/5 flex items-center gap-2 text-xs text-white">{visibleCalendars.outlook ? <CheckCircle2 size={14} className="text-sky-400"/> : <Circle size={14} className="text-slate-500"/>} Outlook</button>
+             </div>
+           )}
+        </div>
       </div>
       <div className="grid grid-cols-7 bg-slate-800/50 border-b border-slate-700 text-center py-2">
         {weekDays.map(d => <div key={d} className="text-xs font-bold text-slate-500 uppercase tracking-wider">{d}</div>)}
@@ -295,7 +296,10 @@ const CalendarView = ({ todos, currentDate, setCurrentDate, onEdit }: any) => {
           const dayString = format(dayItem, 'yyyy-MM-dd');
           const isCurrentMonth = isSameMonth(dayItem, monthStart);
           const isToday = isSameDay(dayItem, new Date());
-          const daysTasks = todos.filter((t: Todo) => t.dueDate === dayString);
+          
+          const daysTasks = visibleCalendars.tasks ? todos.filter((t: Todo) => t.dueDate === dayString) : [];
+          const daysGoogle = visibleCalendars.google ? googleEvents.filter((e: CalendarEvent) => isSameDay(e.start, dayItem)) : [];
+          const daysOutlook = visibleCalendars.outlook ? outlookEvents.filter((e: CalendarEvent) => isSameDay(e.start, dayItem)) : [];
 
           return (
             <div key={dayString} className={`min-h-[100px] p-2 border-b border-r border-slate-800/50 flex flex-col gap-1 transition-colors ${!isCurrentMonth ? 'bg-slate-900/30 text-slate-600' : 'bg-transparent text-slate-300'} ${isToday ? 'bg-indigo-500/5' : ''}`}>
@@ -303,7 +307,6 @@ const CalendarView = ({ todos, currentDate, setCurrentDate, onEdit }: any) => {
                 <span className={`text-sm font-medium ${isToday ? 'bg-indigo-600 text-white w-6 h-6 flex items-center justify-center rounded-full shadow-lg shadow-indigo-500/50' : ''}`}>
                   {format(dayItem, 'd')}
                 </span>
-                {daysTasks.length > 0 && <span className="text-[10px] text-slate-500 font-medium">{daysTasks.length} tasks</span>}
               </div>
               <div className="flex-1 flex flex-col gap-1 mt-1 overflow-y-auto max-h-[80px] scrollbar-hide">
                 {daysTasks.map((t: Todo) => (
@@ -311,11 +314,48 @@ const CalendarView = ({ todos, currentDate, setCurrentDate, onEdit }: any) => {
                     {t.patientName ? <span className="font-bold mr-1">{t.patientName}</span> : null}{t.text}
                   </button>
                 ))}
+                {daysGoogle.map((e: CalendarEvent) => (<div key={e.id} className="text-left text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 bg-emerald-500/10 border-emerald-500 text-emerald-300" title="Google Calendar Event">{e.title}</div>))}
+                {daysOutlook.map((e: CalendarEvent) => (<div key={e.id} className="text-left text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 bg-sky-500/10 border-sky-500 text-sky-300" title="Outlook Event">{e.title}</div>))}
               </div>
             </div>
           );
         })}
       </div>
+    </div>
+  );
+};
+
+// --- EDIT TASK MODAL ---
+const EditTaskModal = ({ isOpen, onClose, todo, onSave, onDelete, categories, rotas, anchorDate }: any) => {
+  const [form, setForm] = useState(todo || {});
+  useEffect(() => { if (todo) setForm(todo); }, [todo]);
+  if (!isOpen || !todo) return null;
+
+  const handleSave = () => { onSave(todo.id, form); onClose(); };
+  const setSmartTime = (type: 'today' | 'tomorrow') => {
+    const date = type === 'today' ? new Date() : addDays(new Date(), 1);
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const timeStr = getShiftEndTime(dateStr, rotas, anchorDate);
+    setForm({ ...form, dueDate: dateStr, dueTime: timeStr });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="p-5 border-b border-slate-800 flex justify-between items-center"><h2 className="text-lg font-bold text-white flex items-center gap-2"><Pencil size={18} /> Edit Task</h2><button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button></div>
+        <div className="p-6 space-y-5">
+          <div className="flex gap-4">
+            <div className="flex-1 space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Category</label><div className="relative"><select value={form.category} onChange={e => setForm({...form, category: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm appearance-none outline-none focus:border-indigo-500">{categories.map((c: string) => <option key={c} value={c}>{c}</option>)}</select><ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" /></div></div>
+            <div className="flex-1 space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Priority</label><div className="flex bg-slate-800 rounded-lg p-1 border border-slate-700">{['low', 'medium', 'high'].map(p => (<button key={p} onClick={() => setForm({...form, priority: p})} className={`flex-1 py-1.5 text-xs font-bold uppercase rounded transition ${form.priority === p ? (p==='high'?'bg-rose-500/20 text-rose-400':p==='medium'?'bg-amber-500/20 text-amber-400':'bg-blue-500/20 text-blue-400') : 'text-slate-500 hover:text-slate-300'}`}>{p}</button>))}</div></div>
+          </div>
+          <div className="space-y-3">
+            <div className="relative"><UserIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><input value={form.patientName} onChange={e => setForm({...form, patientName: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white placeholder-slate-600 focus:border-indigo-500 outline-none" placeholder="Patient Name" /></div>
+            <textarea value={form.text} onChange={e => setForm({...form, text: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white placeholder-slate-600 focus:border-indigo-500 outline-none h-24 resize-none" placeholder="Task description..." />
+          </div>
+          <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Deadline</label><div className="flex gap-2"><input type="date" value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})} className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500" /><input type="time" value={form.dueTime} onChange={e => setForm({...form, dueTime: e.target.value})} className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500" /><button onClick={() => setSmartTime('today')} className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-amber-400 hover:bg-white/5" title="End of Today"><Moon size={18}/></button><button onClick={() => setSmartTime('tomorrow')} className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-sky-400 hover:bg-white/5" title="End of Tomorrow"><Sun size={18}/></button></div></div>
+        </div>
+        <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-between items-center"><button onClick={() => { if(confirm('Delete this task?')) { onDelete(todo.id); onClose(); } }} className="text-rose-400 hover:bg-rose-500/10 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2"><Trash2 size={16}/> Delete</button><div className="flex gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button><button onClick={handleSave} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium">Save Changes</button></div></div>
+      </motion.div>
     </div>
   );
 };
@@ -368,6 +408,12 @@ export default function Dashboard({ user }: DashboardProps) {
   const [anchorDate, setAnchorDate] = useState<string>(''); 
   const [calendarDate, setCalendarDate] = useState(new Date()); 
   
+  // EXTERNAL CALENDARS STATE
+  const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
+  const [outlookEvents, setOutlookEvents] = useState<CalendarEvent[]>([]);
+  const [visibleCalendars, setVisibleCalendars] = useState({ tasks: true, google: true, outlook: true });
+  const [outlookConnected, setOutlookConnected] = useState(false); 
+
   // Input State
   const [input, setInput] = useState('');
   const [patientInput, setPatientInput] = useState('');
@@ -412,6 +458,7 @@ export default function Dashboard({ user }: DashboardProps) {
     return () => document.removeEventListener("mousedown", clickOut);
   }, []);
 
+  // --- FETCH DATA ---
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
     const unsub = onSnapshot(query(collection(db, 'todos'), where('uid', '==', user.uid)), (snap) => {
@@ -437,6 +484,15 @@ export default function Dashboard({ user }: DashboardProps) {
         if (data.anchorDate) setAnchorDate(data.anchorDate);
       }
     });
+
+    // --- FETCH GOOGLE CALENDAR EVENTS (PLACEHOLDER) ---
+    const fetchGoogleEvents = async () => {
+      try {
+        // Real implementation requires using the Google Calendar API client library
+        setGoogleEvents([]); // Initialized to empty to satisfy TS
+      } catch (err) { console.error("Google Calendar Error:", err); }
+    };
+    if (user.providerData.some(p => p.providerId === 'google.com')) fetchGoogleEvents();
     
     return () => { clearInterval(timer); unsub(); };
   }, [user]);
@@ -493,6 +549,12 @@ export default function Dashboard({ user }: DashboardProps) {
 
   const handleSignOut = async () => { try { await signOut(auth); } catch (error) { console.error("Error signing out", error); } };
 
+  const handleConnectOutlook = () => {
+    alert("This feature requires an Azure App Registration. In a production app, this would redirect you to Microsoft login.");
+    setOutlookConnected(true); // Simulate connection
+    setOutlookEvents([]); // Initialize empty events
+  };
+
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() && !patientInput.trim()) return;
@@ -539,13 +601,23 @@ export default function Dashboard({ user }: DashboardProps) {
 
   return (
     <div className="max-w-6xl mx-auto mt-6 px-4 pb-24">
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} categories={categories} />
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        rotas={rotas} 
+        anchorDate={anchorDate} 
+        onSaveRotas={saveRotas} 
+        user={user} 
+        categories={categories}
+        outlookConnected={outlookConnected}
+        onConnectOutlook={handleConnectOutlook}
+      />
       <EditTaskModal isOpen={!!editTask} onClose={() => setEditTask(null)} todo={editTask} onSave={saveTaskChanges} onDelete={deleteTodo} categories={categories} rotas={rotas} anchorDate={anchorDate} />
 
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v7.1</span></h1>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v8.0 (Calendars)</span></h1>
           <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
             <Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span>
           </div>
@@ -722,7 +794,16 @@ export default function Dashboard({ user }: DashboardProps) {
       )}
 
       {viewMode === 'calendar' && (
-        <CalendarView todos={todos} currentDate={calendarDate} setCurrentDate={setCalendarDate} onEdit={openEditModal} />
+        <CalendarView 
+          todos={todos} 
+          currentDate={calendarDate} 
+          setCurrentDate={setCalendarDate} 
+          onEdit={openEditModal} 
+          googleEvents={googleEvents} 
+          outlookEvents={outlookEvents} 
+          visibleCalendars={visibleCalendars} 
+          setVisibleCalendars={setVisibleCalendars} 
+        />
       )}
 
       {/* FOOTER */}
