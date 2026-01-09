@@ -109,6 +109,7 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
   // Category State
   const [localCategories, setLocalCategories] = useState<string[]>(categories || []);
   const [newCat, setNewCat] = useState('');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle'); // <--- NEW STATE
 
   // Password State
   const [newPassword, setNewPassword] = useState('');
@@ -139,6 +140,7 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
   };
   const addWeek = () => { setLocalRotas([...localRotas, JSON.parse(JSON.stringify(DEFAULT_WEEK))]); setActiveWeekIndex(localRotas.length); };
   const removeWeek = (index: number) => { if(localRotas.length<=1)return; setLocalRotas(localRotas.filter((_,i)=>i!==index)); setActiveWeekIndex(0); };
+  
   const handleSaveRota = () => {
     const today = new Date();
     const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
@@ -158,11 +160,24 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
   const handleRemoveCategory = (cat: string) => {
     setLocalCategories(localCategories.filter(c => c !== cat));
   };
+
+  // --- UPDATED SAVE HANDLER ---
   const handleSaveCategories = async () => {
+    setSaveStatus('saving'); // Show spinner
     try {
       await setDoc(doc(db, "users", user.uid), { categories: localCategories }, { merge: true });
-      // Visual feedback could go here
-    } catch (e) { console.error(e); }
+      setSaveStatus('success'); // Show Green Check
+      
+      // Close modal after 1 second so user sees the success message
+      setTimeout(() => {
+        setSaveStatus('idle');
+        onClose();
+      }, 1000);
+      
+    } catch (e) { 
+      console.error(e); 
+      setSaveStatus('idle');
+    }
   };
 
   // --- PASSWORD HANDLER ---
@@ -256,7 +271,22 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
             </div>
             <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0">
               <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Close</button>
-              <button onClick={handleSaveCategories} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2"><Save size={16} /> Save Categories</button>
+              
+              <button 
+                onClick={handleSaveCategories} 
+                disabled={saveStatus !== 'idle'}
+                className={`px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${
+                  saveStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                }`}
+              >
+                {saveStatus === 'saving' ? (
+                  <>Saving...</> 
+                ) : saveStatus === 'success' ? (
+                  <><Check size={16}/> Saved!</>
+                ) : (
+                  <><Save size={16}/> Save Categories</>
+                )}
+              </button>
             </div>
           </div>
         )}
