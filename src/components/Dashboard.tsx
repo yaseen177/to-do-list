@@ -4,8 +4,8 @@ import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc
 import { signOut, updatePassword } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Sun } from 'lucide-react';
-import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, differenceInCalendarWeeks, startOfWeek, subWeeks, addDays } from 'date-fns';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar as CalendarIcon, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, ChevronLeft, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Sun } from 'lucide-react';
+import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, differenceInCalendarWeeks, startOfWeek, subWeeks, addDays, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 
 // --- TYPES ---
 interface Todo {
@@ -100,23 +100,15 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
 // --- SETTINGS MODAL ---
 const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories }: any) => {
   const [activeTab, setActiveTab] = useState<'rota' | 'categories' | 'account'>('rota');
-  
-  // Rota State
   const [localRotas, setLocalRotas] = useState<RotaSystem>(rotas);
   const [activeWeekIndex, setActiveWeekIndex] = useState(0);
   const [currentWeekSelection, setCurrentWeekSelection] = useState(0);
-  
-  // Category State
   const [localCategories, setLocalCategories] = useState<string[]>(categories || []);
   const [newCat, setNewCat] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
-
-  // Password State
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordMsg, setPasswordMsg] = useState({ text: '', type: '' });
-
-  // Detect Login Type
   const isGoogleAuth = user.providerData.some((p: any) => p.providerId === 'google.com');
 
   useEffect(() => {
@@ -132,13 +124,9 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
 
   if (!isOpen) return null;
 
-  // --- ROTA HANDLERS ---
   const handleRotaChange = (day: string, field: keyof DaySchedule, value: any) => {
     const updatedRotas = [...localRotas];
-    updatedRotas[activeWeekIndex] = {
-      ...updatedRotas[activeWeekIndex],
-      [day]: { ...updatedRotas[activeWeekIndex][day], [field]: value }
-    };
+    updatedRotas[activeWeekIndex] = { ...updatedRotas[activeWeekIndex], [day]: { ...updatedRotas[activeWeekIndex][day], [field]: value } };
     setLocalRotas(updatedRotas);
   };
   const addWeek = () => { setLocalRotas([...localRotas, JSON.parse(JSON.stringify(DEFAULT_WEEK))]); setActiveWeekIndex(localRotas.length); };
@@ -152,56 +140,31 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
     onSaveRotas(localRotas, newAnchorStr);
   };
 
-  // --- CATEGORY HANDLERS ---
-  const handleAddCategory = () => {
-    const trimmed = newCat.trim();
-    if (trimmed && !localCategories.includes(trimmed)) {
-      setLocalCategories([...localCategories, trimmed]);
-      setNewCat('');
-    }
-  };
-  const handleRemoveCategory = (cat: string) => {
-    setLocalCategories(localCategories.filter(c => c !== cat));
-  };
-
+  const handleAddCategory = () => { if (newCat.trim() && !localCategories.includes(newCat.trim())) { setLocalCategories([...localCategories, newCat.trim()]); setNewCat(''); } };
+  const handleRemoveCategory = (cat: string) => { setLocalCategories(localCategories.filter(c => c !== cat)); };
   const handleSaveCategories = async () => {
     setSaveStatus('saving');
-    try {
-      await setDoc(doc(db, "users", user.uid), { categories: localCategories }, { merge: true });
-      setSaveStatus('success');
-      setTimeout(() => { setSaveStatus('idle'); onClose(); }, 1000);
-    } catch (e) { console.error(e); setSaveStatus('idle'); }
+    try { await setDoc(doc(db, "users", user.uid), { categories: localCategories }, { merge: true }); setSaveStatus('success'); setTimeout(() => { setSaveStatus('idle'); onClose(); }, 1000); } catch (e) { console.error(e); setSaveStatus('idle'); }
   };
 
-  // --- PASSWORD HANDLER ---
   const handleUpdatePassword = async () => {
     if (newPassword.length < 8) { setPasswordMsg({ text: 'Password too short', type: 'error' }); return; }
     if (newPassword !== confirmPassword) { setPasswordMsg({ text: 'Passwords do not match', type: 'error' }); return; }
-    try {
-      if (user) {
-        await updatePassword(user, newPassword);
-        setPasswordMsg({ text: 'Password updated!', type: 'success' });
-        setNewPassword(''); setConfirmPassword('');
-      }
-    } catch (err: any) { setPasswordMsg({ text: err.message, type: 'error' }); }
+    try { if (user) { await updatePassword(user, newPassword); setPasswordMsg({ text: 'Password updated!', type: 'success' }); setNewPassword(''); setConfirmPassword(''); } } catch (err: any) { setPasswordMsg({ text: err.message, type: 'error' }); }
   };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-        
         <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900 sticky top-0 z-10">
           <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings size={20} /> Settings</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
         </div>
-
         <div className="flex border-b border-slate-800">
           <button onClick={() => setActiveTab('rota')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'rota' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Rota</button>
           <button onClick={() => setActiveTab('categories')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'categories' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Categories</button>
           <button onClick={() => setActiveTab('account')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'account' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Account</button>
         </div>
-
-        {/* --- ROTA TAB --- */}
         {activeTab === 'rota' && (
           <>
             <div className="bg-indigo-500/10 border-b border-indigo-500/20 p-4">
@@ -232,8 +195,6 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
             </div>
           </>
         )}
-
-        {/* --- CATEGORIES TAB --- */}
         {activeTab === 'categories' && (
           <div className="flex-1 flex flex-col min-h-0">
             <div className="p-6 space-y-6 overflow-y-auto flex-1">
@@ -242,56 +203,27 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
                 <button onClick={handleAddCategory} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg"><Plus size={20}/></button>
               </div>
               <div className="space-y-2">
-                {localCategories.map(cat => (
-                  <div key={cat} className="flex items-center justify-between p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg group">
-                    <span className="text-slate-200 text-sm font-medium">{cat}</span>
-                    <button onClick={() => handleRemoveCategory(cat)} className="text-slate-500 hover:text-rose-400 transition opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
-                  </div>
-                ))}
+                {localCategories.map(cat => (<div key={cat} className="flex items-center justify-between p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg group"><span className="text-slate-200 text-sm font-medium">{cat}</span><button onClick={() => handleRemoveCategory(cat)} className="text-slate-500 hover:text-rose-400 transition opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button></div>))}
                 {localCategories.length === 0 && <div className="text-center text-slate-500 text-sm py-4">No categories set.</div>}
               </div>
             </div>
             <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0">
               <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Close</button>
-              <button onClick={handleSaveCategories} disabled={saveStatus !== 'idle'} className={`px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${saveStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
-                {saveStatus === 'saving' ? <>Saving...</> : saveStatus === 'success' ? <><Check size={16}/> Saved!</> : <><Save size={16}/> Save Categories</>}
-              </button>
+              <button onClick={handleSaveCategories} disabled={saveStatus !== 'idle'} className={`px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${saveStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>{saveStatus === 'saving' ? <>Saving...</> : saveStatus === 'success' ? <><Check size={16}/> Saved!</> : <><Save size={16}/> Save Categories</>}</button>
             </div>
           </div>
         )}
-
-        {/* --- ACCOUNT TAB (CONDITIONAL) --- */}
         {activeTab === 'account' && (
           <div className="p-6 space-y-6 overflow-y-auto flex-1">
              <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
                 <h3 className="text-white font-bold flex items-center gap-2 mb-4"><Lock size={18} className="text-indigo-400"/> Authentication</h3>
-                
-                {/* CONDITIONAL UI BASED ON PROVIDER */}
                 {isGoogleAuth ? (
-                  <div className="flex flex-col items-center justify-center py-4 space-y-3">
-                    <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg">
-                      <img src="https://www.google.com/favicon.ico" alt="Google" className="w-6 h-6" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-white font-medium">Connected with Google</p>
-                      <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Password & Security are managed via your Google Account.</p>
-                    </div>
-                  </div>
+                  <div className="flex flex-col items-center justify-center py-4 space-y-3"><div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg"><img src="https://www.google.com/favicon.ico" alt="Google" className="w-6 h-6" /></div><div className="text-center"><p className="text-white font-medium">Connected with Google</p><p className="text-xs text-slate-400 mt-1 max-w-[200px]">Password & Security are managed via your Google Account.</p></div></div>
                 ) : (
-                  <div className="space-y-4">
-                     <label className="text-xs text-slate-400 uppercase font-bold tracking-wider">Change Password</label>
-                     <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="New Password" />
-                     <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="Confirm Password" />
-                     {passwordMsg.text && <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{passwordMsg.text}</div>}
-                     <button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition">Update Password</button>
-                  </div>
+                  <div className="space-y-4"><label className="text-xs text-slate-400 uppercase font-bold tracking-wider">Change Password</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="New Password" /><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="Confirm Password" />{passwordMsg.text && <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{passwordMsg.text}</div>}<button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition">Update Password</button></div>
                 )}
              </div>
-             
-             <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30">
-                <h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">Your data is stored securely in compliance with UK GDPR standards.</p>
-             </div>
+             <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30"><h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3><p className="text-xs text-slate-500 leading-relaxed">Your data is stored securely in compliance with UK GDPR standards.</p></div>
           </div>
         )}
       </motion.div>
@@ -299,7 +231,77 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
   );
 };
 
-// --- TASK ITEM COMPONENT ---
+// --- CALENDAR VIEW COMPONENT ---
+const CalendarView = ({ todos, currentDate, setCurrentDate }: any) => {
+  const monthStart = startOfMonth(currentDate);
+  const monthEnd = endOfMonth(monthStart);
+  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 }); // Monday start
+  const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const dateFormat = "d";
+  const rows = [];
+  let days = [];
+  let day = startDate;
+  let formattedDate = "";
+
+  const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  const allDays = eachDayOfInterval({ start: startDate, end: endDate });
+
+  return (
+    <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl overflow-hidden shadow-xl">
+      {/* Calendar Header */}
+      <div className="flex items-center justify-between p-4 bg-slate-800/80 border-b border-slate-700">
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-bold text-white">{format(currentDate, "MMMM yyyy")}</h2>
+          <div className="flex bg-slate-700 rounded-lg p-0.5">
+            <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-1 hover:bg-white/10 rounded"><ChevronLeft size={20} className="text-slate-300" /></button>
+            <button onClick={() => setCurrentDate(new Date())} className="px-3 text-xs font-bold text-slate-300 hover:text-white">Today</button>
+            <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-1 hover:bg-white/10 rounded"><ChevronRight size={20} className="text-slate-300" /></button>
+          </div>
+        </div>
+      </div>
+
+      {/* Weekday Headers */}
+      <div className="grid grid-cols-7 bg-slate-800/50 border-b border-slate-700 text-center py-2">
+        {weekDays.map(d => <div key={d} className="text-xs font-bold text-slate-500 uppercase tracking-wider">{d}</div>)}
+      </div>
+
+      {/* Calendar Grid */}
+      <div className="grid grid-cols-7 auto-rows-fr bg-slate-900">
+        {allDays.map((dayItem, i) => {
+          const dayString = format(dayItem, 'yyyy-MM-dd');
+          const isCurrentMonth = isSameMonth(dayItem, monthStart);
+          const isToday = isSameDay(dayItem, new Date());
+          
+          // Find tasks for this day
+          const daysTasks = todos.filter((t: Todo) => t.dueDate === dayString);
+
+          return (
+            <div key={dayString} className={`min-h-[100px] p-2 border-b border-r border-slate-800/50 flex flex-col gap-1 transition-colors ${!isCurrentMonth ? 'bg-slate-900/30 text-slate-600' : 'bg-transparent text-slate-300'} ${isToday ? 'bg-indigo-500/5' : ''}`}>
+              <div className="flex justify-between items-start">
+                <span className={`text-sm font-medium ${isToday ? 'bg-indigo-600 text-white w-6 h-6 flex items-center justify-center rounded-full shadow-lg shadow-indigo-500/50' : ''}`}>
+                  {format(dayItem, 'd')}
+                </span>
+                {daysTasks.length > 0 && <span className="text-[10px] text-slate-500 font-medium">{daysTasks.length} tasks</span>}
+              </div>
+              
+              <div className="flex-1 flex flex-col gap-1 mt-1 overflow-y-auto max-h-[80px] scrollbar-hide">
+                {daysTasks.map((t: Todo) => (
+                  <div key={t.id} className={`text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 ${t.completed ? 'opacity-40 line-through bg-slate-800 border-slate-600 text-slate-500' : t.priority === 'high' ? 'bg-rose-500/10 border-rose-500 text-rose-300' : t.priority === 'medium' ? 'bg-amber-500/10 border-amber-500 text-amber-300' : 'bg-blue-500/10 border-blue-500 text-blue-300'}`}>
+                    {t.patientName ? <span className="font-bold mr-1">{t.patientName}</span> : null}
+                    {t.text}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// --- TASK ITEM COMPONENT (Unchanged) ---
 const TaskItem = ({ 
   todo, now, editingId, editForm, setEditForm, saveEdit, startEditing, deleteTodo, toggleComplete, privacyMode, setEditingId, updateStatus, rotas, anchorDate
 }: any) => {
@@ -357,7 +359,7 @@ const TaskItem = ({
                 <span className="text-slate-500 flex items-center gap-1" title="Created"><Clock size={10} /> {createdStr}</span>
                 <span className="text-slate-400 flex items-center gap-1" title="Time Waiting"><Hourglass size={10} /> {waiting}</span>
                 {remaining && !todo.completed && <span className={`font-medium flex items-center gap-1 ${remaining.color}`}><Target size={10}/> {remaining.text}</span>}
-                {todo.dueDate && <span className="text-slate-300 flex items-center gap-1"><Calendar size={10} /> {format(parseISO(todo.dueDate), 'd MMM')} {todo.dueTime}</span>}
+                {todo.dueDate && <span className="text-slate-300 flex items-center gap-1"><CalendarIcon size={10} /> {format(parseISO(todo.dueDate), 'd MMM')} {todo.dueTime}</span>}
               </div>
             </div>
           )}
@@ -383,9 +385,10 @@ const TaskItem = ({
 // --- MAIN DASHBOARD ---
 export default function Dashboard({ user }: DashboardProps) {
   const [todos, setTodos] = useState<Todo[]>([]);
-  const [viewMode, setViewMode] = useState<'list' | 'board'>('list'); 
+  const [viewMode, setViewMode] = useState<'list' | 'board' | 'calendar'>('list'); 
   const [rotas, setRotas] = useState<RotaSystem>([DEFAULT_WEEK]); 
   const [anchorDate, setAnchorDate] = useState<string>(''); 
+  const [calendarDate, setCalendarDate] = useState(new Date()); // State for calendar nav
   
   // Input State
   const [input, setInput] = useState('');
@@ -445,23 +448,15 @@ export default function Dashboard({ user }: DashboardProps) {
       setIsLoading(false);
     });
     
-    // Fetch User Settings
     onSnapshot(doc(db, "users", user.uid), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        
-        // 1. Load Categories & Set Default
         if (data.categories && data.categories.length > 0) {
            setCategories(data.categories);
-           // FIX: Auto-select the first category from the user's list
            setCategory(data.categories[0]); 
         }
-
-        // 2. Load Rotas
         if (data.rotas) setRotas(data.rotas); 
         else if (data.schedule) setRotas([data.schedule]);
-        
-        // 3. Load Anchor Date
         if (data.anchorDate) setAnchorDate(data.anchorDate);
       }
     });
@@ -564,22 +559,20 @@ export default function Dashboard({ user }: DashboardProps) {
     setIsSmartDateOpen(false);
   };
 
+  const applyEndOfDay = () => {
+    const targetDate = dueDate || format(new Date(), 'yyyy-MM-dd');
+    setDueTime(getShiftEndTime(targetDate, rotas, anchorDate));
+    setIsTimeOpen(false);
+  };
+
   return (
     <div className="max-w-6xl mx-auto mt-6 px-4 pb-24">
-      <SettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
-        rotas={rotas} 
-        anchorDate={anchorDate} 
-        onSaveRotas={saveRotas} 
-        user={user} 
-        categories={categories} // <--- Make sure this is added!
-      />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} categories={categories} />
 
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v6.0</span></h1>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v6.1</span></h1>
           <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
             <Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span>
           </div>
@@ -588,6 +581,7 @@ export default function Dashboard({ user }: DashboardProps) {
           <div className="flex bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
             <button onClick={() => setViewMode('list')} className={`p-2 rounded transition ${viewMode==='list'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><LayoutTemplate size={18} /></button>
             <button onClick={() => setViewMode('board')} className={`p-2 rounded transition ${viewMode==='board'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><KanbanSquare size={18} /></button>
+            <button onClick={() => setViewMode('calendar')} className={`p-2 rounded transition ${viewMode==='calendar'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><CalendarIcon size={18} /></button>
           </div>
           <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 transition" title="Settings"><Settings size={20} /></button>
           <div className="relative group hidden sm:block">
@@ -652,7 +646,7 @@ export default function Dashboard({ user }: DashboardProps) {
                     <button onClick={() => setSmartDeadline('today')} className="w-full text-left px-4 py-2 hover:bg-white/5 text-amber-300 flex items-center gap-2"><Moon size={14}/> End of Today</button>
                     <button onClick={() => setSmartDeadline('tomorrow')} className="w-full text-left px-4 py-2 hover:bg-white/5 text-sky-300 flex items-center gap-2"><Sun size={14}/> End of Tomorrow</button>
                     <div className="h-[1px] bg-slate-700 my-1"></div>
-                    <button onClick={() => { setDueDate(format(new Date(), 'yyyy-MM-dd')); setIsSmartDateOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-slate-300 flex items-center gap-2"><Calendar size={14}/> Custom Date...</button>
+                    <button onClick={() => { setDueDate(format(new Date(), 'yyyy-MM-dd')); setIsSmartDateOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-slate-300 flex items-center gap-2"><CalendarIcon size={14}/> Custom Date...</button>
                   </div>
                 )}
               </div>
@@ -751,6 +745,10 @@ export default function Dashboard({ user }: DashboardProps) {
            <div className="space-y-3"><h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2"><Hourglass size={14} /> Waiting ({groupedTodos.board.waiting.length})</h3><div className="space-y-2 min-h-[200px]">{groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div></div>
            <div className="space-y-3"><h3 className="text-sm font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2"><CheckCircle2 size={14} /> Done ({groupedTodos.board.done.length})</h3><div className="space-y-2 min-h-[200px] opacity-70">{groupedTodos.board.done.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} rotas={rotas} anchorDate={anchorDate} />)}</div></div>
         </div>
+      )}
+
+      {viewMode === 'calendar' && (
+        <CalendarView todos={todos} currentDate={calendarDate} setCurrentDate={setCalendarDate} />
       )}
 
       {/* FOOTER */}
