@@ -98,12 +98,18 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
 };
 
 // --- SETTINGS MODAL ---
-const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user }: any) => {
-  const [activeTab, setActiveTab] = useState<'rota' | 'account'>('rota');
+const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, categories }: any) => {
+  const [activeTab, setActiveTab] = useState<'rota' | 'categories' | 'account'>('rota');
+  
+  // Rota State
   const [localRotas, setLocalRotas] = useState<RotaSystem>(rotas);
   const [activeWeekIndex, setActiveWeekIndex] = useState(0);
   const [currentWeekSelection, setCurrentWeekSelection] = useState(0);
   
+  // Category State
+  const [localCategories, setLocalCategories] = useState<string[]>(categories || []);
+  const [newCat, setNewCat] = useState('');
+
   // Password State
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -111,16 +117,18 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user }
 
   useEffect(() => {
     if (rotas) setLocalRotas(rotas);
+    if (categories) setLocalCategories(categories);
     if (anchorDate && rotas.length > 0) {
         const anchor = parseISO(anchorDate);
         const weeksPassed = differenceInCalendarWeeks(new Date(), anchor, { weekStartsOn: 1 });
         const currentIndex = ((weeksPassed % rotas.length) + rotas.length) % rotas.length;
         setCurrentWeekSelection(currentIndex);
     }
-  }, [rotas, anchorDate]);
+  }, [rotas, anchorDate, categories]);
 
   if (!isOpen) return null;
 
+  // --- ROTA HANDLERS ---
   const handleRotaChange = (day: string, field: keyof DaySchedule, value: any) => {
     const updatedRotas = [...localRotas];
     updatedRotas[activeWeekIndex] = {
@@ -139,6 +147,25 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user }
     onSaveRotas(localRotas, newAnchorStr);
   };
 
+  // --- CATEGORY HANDLERS ---
+  const handleAddCategory = () => {
+    const trimmed = newCat.trim();
+    if (trimmed && !localCategories.includes(trimmed)) {
+      setLocalCategories([...localCategories, trimmed]);
+      setNewCat('');
+    }
+  };
+  const handleRemoveCategory = (cat: string) => {
+    setLocalCategories(localCategories.filter(c => c !== cat));
+  };
+  const handleSaveCategories = async () => {
+    try {
+      await setDoc(doc(db, "users", user.uid), { categories: localCategories }, { merge: true });
+      // Visual feedback could go here
+    } catch (e) { console.error(e); }
+  };
+
+  // --- PASSWORD HANDLER ---
   const handleUpdatePassword = async () => {
     if (newPassword.length < 8) { setPasswordMsg({ text: 'Password too short', type: 'error' }); return; }
     if (newPassword !== confirmPassword) { setPasswordMsg({ text: 'Passwords do not match', type: 'error' }); return; }
@@ -154,14 +181,21 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user }
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+        
+        {/* Header */}
         <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900 sticky top-0 z-10">
           <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings size={20} /> Settings</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
         </div>
+
+        {/* Tabs */}
         <div className="flex border-b border-slate-800">
-          <button onClick={() => setActiveTab('rota')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'rota' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Work Schedule</button>
+          <button onClick={() => setActiveTab('rota')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'rota' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Rota</button>
+          <button onClick={() => setActiveTab('categories')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'categories' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Categories</button>
           <button onClick={() => setActiveTab('account')} className={`flex-1 py-3 text-sm font-medium transition ${activeTab === 'account' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:text-slate-200'}`}>Account</button>
         </div>
+
+        {/* --- ROTA TAB --- */}
         {activeTab === 'rota' && (
           <>
             <div className="bg-indigo-500/10 border-b border-indigo-500/20 p-4">
@@ -192,6 +226,42 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user }
             </div>
           </>
         )}
+
+        {/* --- CATEGORIES TAB --- */}
+        {activeTab === 'categories' && (
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
+              <div className="flex gap-2">
+                <input 
+                  value={newCat} 
+                  onChange={(e) => setNewCat(e.target.value)} 
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                  placeholder="New Category Name..." 
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:border-indigo-500 outline-none"
+                />
+                <button onClick={handleAddCategory} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg"><Plus size={20}/></button>
+              </div>
+              
+              <div className="space-y-2">
+                {localCategories.map(cat => (
+                  <div key={cat} className="flex items-center justify-between p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg group">
+                    <span className="text-slate-200 text-sm font-medium">{cat}</span>
+                    <button onClick={() => handleRemoveCategory(cat)} className="text-slate-500 hover:text-rose-400 transition opacity-0 group-hover:opacity-100">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+                {localCategories.length === 0 && <div className="text-center text-slate-500 text-sm py-4">No categories set.</div>}
+              </div>
+            </div>
+            <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0">
+              <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Close</button>
+              <button onClick={handleSaveCategories} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2"><Save size={16} /> Save Categories</button>
+            </div>
+          </div>
+        )}
+
+        {/* --- ACCOUNT TAB --- */}
         {activeTab === 'account' && (
           <div className="p-6 space-y-6 overflow-y-auto flex-1">
              <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
@@ -467,7 +537,15 @@ export default function Dashboard({ user }: DashboardProps) {
 
   return (
     <div className="max-w-6xl mx-auto mt-6 px-4 pb-24">
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} rotas={rotas} anchorDate={anchorDate} onSaveRotas={saveRotas} user={user} />
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        rotas={rotas} 
+        anchorDate={anchorDate} 
+        onSaveRotas={saveRotas} 
+        user={user} 
+        categories={categories} // <--- Make sure this is added!
+      />
 
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
