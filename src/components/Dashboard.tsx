@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase';
-import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, setDoc, getDoc } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity } from 'lucide-react';
-import { format, isPast, parseISO, intervalToDuration, addHours, isBefore } from 'date-fns';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon } from 'lucide-react';
+import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, getDay } from 'date-fns';
 
 // --- TYPES ---
 interface Todo {
@@ -21,6 +21,20 @@ interface Todo {
   createdAt: any; 
 }
 
+// 🗓️ Schedule Types
+type DaySchedule = { start: string; end: string; isOff: boolean };
+type WeeklySchedule = Record<string, DaySchedule>; // "monday": {...}
+
+const DEFAULT_SCHEDULE: WeeklySchedule = {
+  monday: { start: '09:00', end: '17:30', isOff: false },
+  tuesday: { start: '09:00', end: '17:30', isOff: false },
+  wednesday: { start: '09:00', end: '17:30', isOff: false },
+  thursday: { start: '09:00', end: '17:30', isOff: false },
+  friday: { start: '09:00', end: '17:30', isOff: false },
+  saturday: { start: '09:00', end: '13:00', isOff: false },
+  sunday: { start: '00:00', end: '00:00', isOff: true },
+};
+
 interface DashboardProps {
   user: User;
 }
@@ -34,6 +48,19 @@ const TIME_SLOTS = Array.from({ length: 23 }).map((_, i) => {
 });
 
 // --- HELPER FUNCTIONS ---
+const getDayName = (dateStr: string) => {
+  if (!dateStr) return 'monday'; // Default
+  const date = parseISO(dateStr);
+  return format(date, 'EEEE').toLowerCase(); // "monday", "tuesday"...
+};
+
+const getShiftEndTime = (dateStr: string, schedule: WeeklySchedule) => {
+  const day = getDayName(dateStr);
+  const daySettings = schedule[day] || DEFAULT_SCHEDULE.monday;
+  if (daySettings.isOff) return '17:30'; // Default fallback if off
+  return daySettings.end;
+};
+
 const getTimeRemaining = (dueDateStr: string, dueTimeStr: string | undefined, now: Date) => {
   if (!dueDateStr) return null;
   const due = parseISO(dueDateStr);
@@ -67,9 +94,65 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
   return parts.length > 0 ? parts.join(' ') : 'Just now';
 };
 
-// --- ISOLATED TASK ITEM COMPONENT ---
+// --- SETTINGS MODAL COMPONENT ---
+const ScheduleSettings = ({ isOpen, onClose, schedule, onSave }: any) => {
+  const [localSchedule, setLocalSchedule] = useState<WeeklySchedule>(schedule);
+
+  if (!isOpen) return null;
+
+  const handleChange = (day: string, field: keyof DaySchedule, value: any) => {
+    setLocalSchedule(prev => ({
+      ...prev,
+      [day]: { ...prev[day], [field]: value }
+    }));
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden">
+        <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings size={20} /> Work Schedule</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
+        </div>
+        <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+          <p className="text-sm text-slate-400 mb-4">Set your typical shift times. "End of Day" will use these times automatically.</p>
+          {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => (
+            <div key={day} className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+              <div className="w-24 capitalize text-sm font-medium text-slate-200">{day}</div>
+              
+              {!localSchedule[day].isOff ? (
+                <>
+                  <input type="time" value={localSchedule[day].start} onChange={(e) => handleChange(day, 'start', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" />
+                  <span className="text-slate-500">-</span>
+                  <input type="time" value={localSchedule[day].end} onChange={(e) => handleChange(day, 'end', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" />
+                </>
+              ) : (
+                 <span className="flex-1 text-center text-xs text-slate-500 uppercase tracking-wider font-bold">Day Off</span>
+              )}
+              
+              <button 
+                onClick={() => handleChange(day, 'isOff', !localSchedule[day].isOff)}
+                className={`px-3 py-1 rounded text-xs font-bold transition ${localSchedule[day].isOff ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}
+              >
+                {localSchedule[day].isOff ? 'OFF' : 'ON'}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+          <button onClick={() => onSave(localSchedule)} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2">
+            <Save size={16} /> Save Schedule
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// --- TASK ITEM COMPONENT ---
 const TaskItem = ({ 
-  todo, now, editingId, editForm, setEditForm, saveEdit, startEditing, deleteTodo, toggleComplete, privacyMode, setEditingId, updateStatus
+  todo, now, editingId, editForm, setEditForm, saveEdit, startEditing, deleteTodo, toggleComplete, privacyMode, setEditingId, updateStatus, schedule
 }: any) => {
   
   const [isEditTimeOpen, setIsEditTimeOpen] = useState(false);
@@ -79,9 +162,17 @@ const TaskItem = ({
     ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM') 
     : 'Now';
 
-  // Safely handle missing status/priority on old tasks
+  // Safely handle missing status/priority
   const currentStatus = todo.status || 'todo'; 
   const currentPriority = todo.priority || 'medium';
+
+  const applyEndOfDay = () => {
+    // If we have a due date in the form, use it, otherwise use todo.dueDate, otherwise today
+    const targetDate = editForm.dueDate || todo.dueDate || format(new Date(), 'yyyy-MM-dd');
+    const shiftEnd = getShiftEndTime(targetDate, schedule);
+    setEditForm({ ...editForm, dueTime: shiftEnd });
+    setIsEditTimeOpen(false);
+  };
 
   return (
     <motion.div 
@@ -109,13 +200,24 @@ const TaskItem = ({
                     className="w-1/3 bg-slate-800/50 text-indigo-300 font-bold text-sm p-2 rounded border border-indigo-500/30 focus:outline-none"
                     placeholder="Patient Name"
                   />
+                  <input 
+                    type="date"
+                    value={editForm.dueDate || ''}
+                    onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
+                    className="bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 w-[110px]"
+                  />
                   <div className="relative">
                     <button onClick={() => setIsEditTimeOpen(!isEditTimeOpen)} className="flex items-center gap-1 bg-slate-800/50 text-slate-300 text-sm p-2 rounded border border-indigo-500/30 w-[80px] justify-center">
                        {editForm.dueTime || <Clock size={14}/>}
                     </button>
                     {isEditTimeOpen && (
-                      <div className="absolute top-full left-0 mt-1 w-[100px] max-h-[150px] overflow-y-auto bg-slate-800 border border-slate-700 rounded z-50">
-                         {TIME_SLOTS.map(t => <button key={t} onClick={()=>{setEditForm({...editForm, dueTime:t}); setIsEditTimeOpen(false)}} className="w-full text-left px-2 py-1 text-xs hover:bg-white/10">{t}</button>)}
+                      <div className="absolute top-full left-0 mt-1 w-[140px] max-h-[150px] overflow-y-auto bg-slate-800 border border-slate-700 rounded z-50">
+                         {/* END OF DAY SHORTCUT */}
+                         <button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2">
+                           <Moon size={12}/> End of Day
+                         </button>
+                         <button onClick={() => { setEditForm({...editForm, dueTime: ''}); setIsEditTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">No time</button>
+                         {TIME_SLOTS.map(t => <button key={t} onClick={()=>{setEditForm({...editForm, dueTime:t}); setIsEditTimeOpen(false)}} className="w-full text-left px-2 py-1 text-xs hover:bg-white/10 text-slate-300">{t}</button>)}
                       </div>
                     )}
                   </div>
@@ -141,7 +243,6 @@ const TaskItem = ({
                 <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-white/5 px-2 py-0.5 rounded">
                   {todo.category}
                 </span>
-                {/* Status Badge - Now safely handles missing status */}
                 <button 
                   onClick={() => updateStatus(todo)}
                   className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded border ml-auto sm:ml-0 transition ${
@@ -195,6 +296,7 @@ const TaskItem = ({
 export default function Dashboard({ user }: DashboardProps) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list'); 
+  const [schedule, setSchedule] = useState<WeeklySchedule>(DEFAULT_SCHEDULE);
   
   // Input State
   const [input, setInput] = useState('');
@@ -206,15 +308,16 @@ export default function Dashboard({ user }: DashboardProps) {
   const [categories, setCategories] = useState<string[]>(['General']);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Dropdown UI
+  // UI State
   const [isCatOpen, setIsCatOpen] = useState(false);
   const [isTimeOpen, setIsTimeOpen] = useState(false);
   const [isPriorityOpen, setIsPriorityOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // General State
   const [now, setNow] = useState(new Date());
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ text: '', patientName: '', dueTime: '' });
+  const [editForm, setEditForm] = useState({ text: '', patientName: '', dueTime: '', dueDate: '' });
   const [privacyMode, setPrivacyMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -242,7 +345,6 @@ export default function Dashboard({ user }: DashboardProps) {
     const unsub = onSnapshot(query(collection(db, 'todos'), where('uid', '==', user.uid)), (snap) => {
       let tasks = snap.docs.map(d => ({ ...d.data(), id: d.id } as Todo));
       tasks.sort((a, b) => {
-        // High priority first, then dates
         if (a.priority === 'high' && b.priority !== 'high' && !a.completed) return -1;
         if (b.priority === 'high' && a.priority !== 'high' && !b.completed) return 1;
         return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
@@ -250,14 +352,20 @@ export default function Dashboard({ user }: DashboardProps) {
       setTodos(tasks);
       setIsLoading(false);
     });
-    // Fetch Categories
+    
+    // Fetch User Settings (Categories & Schedule)
     onSnapshot(doc(db, "users", user.uid), (snap) => {
-      if (snap.exists() && snap.data().categories) setCategories(snap.data().categories);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.categories) setCategories(data.categories);
+        if (data.schedule) setSchedule(data.schedule);
+      }
     });
+    
     return () => { clearInterval(timer); unsub(); };
   }, [user]);
 
-  // --- STATS CALCULATION 📊 ---
+  // --- STATS ---
   const stats = useMemo(() => {
     return {
       total: todos.length,
@@ -267,32 +375,26 @@ export default function Dashboard({ user }: DashboardProps) {
     };
   }, [todos]);
 
-  // --- GROUPING LOGIC ---
+  // --- GROUPING ---
   const groupedTodos = useMemo(() => {
     const filtered = todos.filter(t => 
       t.text.toLowerCase().includes(searchQuery.toLowerCase()) || 
       (t.patientName && t.patientName.toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
-    // List View Grouping
     const list = { overdue: [] as Todo[], soon: [] as Todo[], later: [] as Todo[], completed: [] as Todo[] };
+    const board = { todo: [] as Todo[], inProgress: [] as Todo[], waiting: [] as Todo[], done: [] as Todo[] };
     const next24h = addHours(now, 24);
 
-    // Board View Grouping
-    const board = { todo: [] as Todo[], inProgress: [] as Todo[], waiting: [] as Todo[], done: [] as Todo[] };
-
     filtered.forEach(todo => {
-      // Ensure we have fallbacks for status
       const status = todo.status || 'todo';
       const isComplete = todo.completed || status === 'done';
 
-      // Board buckets
       if (isComplete) board.done.push(todo);
       else if (status === 'waiting') board.waiting.push(todo);
       else if (status === 'in-progress') board.inProgress.push(todo);
       else board.todo.push(todo);
 
-      // List buckets
       if (isComplete) { list.completed.push(todo); return; }
       if (!todo.dueDate) { list.later.push(todo); return; }
       const due = parseISO(todo.dueDate);
@@ -308,6 +410,11 @@ export default function Dashboard({ user }: DashboardProps) {
   }, [todos, searchQuery, now]);
 
   // --- ACTIONS ---
+  const saveSchedule = async (newSchedule: WeeklySchedule) => {
+    await setDoc(doc(db, "users", user.uid), { schedule: newSchedule }, { merge: true });
+    setIsSettingsOpen(false);
+  };
+
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() && !patientInput.trim()) return;
@@ -318,50 +425,46 @@ export default function Dashboard({ user }: DashboardProps) {
   };
 
   const updateStatus = async (todo: Todo) => {
-    const map: Record<string, 'todo' | 'in-progress' | 'waiting' | 'done'> = {
-      'todo': 'in-progress', 'in-progress': 'waiting', 'waiting': 'done', 'done': 'todo'
-    };
-    // Safe fallback if status is missing
-    const currentStatus = todo.status || 'todo';
-    const newStatus = map[currentStatus];
-    await updateDoc(doc(db, 'todos', todo.id), { 
-      status: newStatus, 
-      completed: newStatus === 'done' 
-    });
+    const map: Record<string, 'todo' | 'in-progress' | 'waiting' | 'done'> = { 'todo': 'in-progress', 'in-progress': 'waiting', 'waiting': 'done', 'done': 'todo' };
+    const newStatus = map[todo.status || 'todo'];
+    await updateDoc(doc(db, 'todos', todo.id), { status: newStatus, completed: newStatus === 'done' });
   };
 
   const toggleComplete = async (todo: Todo) => {
     const newCompleted = !todo.completed;
-    await updateDoc(doc(db, 'todos', todo.id), { 
-      completed: newCompleted,
-      status: newCompleted ? 'done' : 'todo'
-    });
+    await updateDoc(doc(db, 'todos', todo.id), { completed: newCompleted, status: newCompleted ? 'done' : 'todo' });
   };
 
   const deleteTodo = async (id: string) => deleteDoc(doc(db, 'todos', id));
   
   const startEditing = (todo: Todo) => {
     setEditingId(todo.id);
-    setEditForm({ text: todo.text, patientName: todo.patientName || '', dueTime: todo.dueTime || '' });
+    setEditForm({ text: todo.text, patientName: todo.patientName || '', dueTime: todo.dueTime || '', dueDate: todo.dueDate || '' });
   };
   
   const saveEdit = async (id: string) => {
     if (!editForm.text.trim()) return;
-    await updateDoc(doc(db, 'todos', id), { text: editForm.text, patientName: editForm.patientName, dueTime: editForm.dueTime });
+    await updateDoc(doc(db, 'todos', id), { 
+      text: editForm.text, patientName: editForm.patientName, dueTime: editForm.dueTime, dueDate: editForm.dueDate 
+    });
     setEditingId(null);
   };
 
   const setDueToday = () => setDueDate(format(new Date(), 'yyyy-MM-dd'));
+  const applyEndOfDay = () => {
+    const targetDate = dueDate || format(new Date(), 'yyyy-MM-dd');
+    setDueTime(getShiftEndTime(targetDate, schedule));
+    setIsTimeOpen(false);
+  };
 
   return (
     <div className="max-w-6xl mx-auto mt-6 px-4 pb-24">
+      <ScheduleSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} schedule={schedule} onSave={saveSchedule} />
+
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">
-            Clinical Admin
-            <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v2.0</span>
-          </h1>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v2.1</span></h1>
           <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
             <Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span>
           </div>
@@ -371,6 +474,7 @@ export default function Dashboard({ user }: DashboardProps) {
             <button onClick={() => setViewMode('list')} className={`p-2 rounded transition ${viewMode==='list'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><LayoutTemplate size={18} /></button>
             <button onClick={() => setViewMode('board')} className={`p-2 rounded transition ${viewMode==='board'?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}><KanbanSquare size={18} /></button>
           </div>
+          <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 transition" title="Work Schedule"><Settings size={20} /></button>
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
             <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="bg-slate-800/50 border border-slate-700 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-indigo-500 w-[180px]" />
@@ -388,16 +492,14 @@ export default function Dashboard({ user }: DashboardProps) {
           </div>
           <input value={input} onChange={(e) => setInput(e.target.value)} className="flex-1 bg-transparent border-none focus:outline-none text-base placeholder-slate-600 h-10 text-slate-200 min-w-[160px]" placeholder="New task..." />
           
-          {/* Priority Selector */}
+          {/* Priority */}
           <div className="relative" ref={prioRef}>
              <button type="button" onClick={() => setIsPriorityOpen(!isPriorityOpen)} className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition border ${priority === 'high' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : priority === 'medium' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
                 <Flag size={14} fill={priority === 'high' ? "currentColor" : "none"} />
              </button>
              {isPriorityOpen && (
                <div className="absolute top-full right-0 mt-2 w-[100px] bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50">
-                 {['low', 'medium', 'high'].map(p => (
-                   <button key={p} type="button" onClick={()=>{setPriority(p as any); setIsPriorityOpen(false)}} className={`w-full text-left px-3 py-2 text-xs capitalize hover:bg-white/5 ${p==='high'?'text-rose-400':p==='medium'?'text-amber-400':'text-slate-400'}`}>{p}</button>
-                 ))}
+                 {['low', 'medium', 'high'].map(p => (<button key={p} type="button" onClick={()=>{setPriority(p as any); setIsPriorityOpen(false)}} className={`w-full text-left px-3 py-2 text-xs capitalize hover:bg-white/5 ${p==='high'?'text-rose-400':p==='medium'?'text-amber-400':'text-slate-400'}`}>{p}</button>))}
                </div>
              )}
           </div>
@@ -410,7 +512,11 @@ export default function Dashboard({ user }: DashboardProps) {
              <div className="relative" ref={timeRef}>
                <button type="button" onClick={() => setIsTimeOpen(!isTimeOpen)} className="flex items-center gap-1 bg-transparent text-slate-400 text-sm hover:text-white px-2 py-1 min-w-[60px] justify-center"><Clock size={14} /><span>{dueTime || "Time"}</span></button>
                {isTimeOpen && (
-                 <div className="absolute top-full right-0 mt-2 w-[100px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50">
+                 <div className="absolute top-full right-0 mt-2 w-[140px] max-h-[200px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50">
+                   {/* END OF DAY SHORTCUT */}
+                   <button onClick={applyEndOfDay} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/5 border-b border-white/5 flex items-center gap-2">
+                     <Moon size={12}/> End of Day
+                   </button>
                    <button onClick={() => { setDueTime(''); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-white/5 border-b border-white/5">None</button>
                    {TIME_SLOTS.map(time => (<button key={time} type="button" onClick={() => { setDueTime(time); setIsTimeOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-indigo-500/20">{time}</button>))}
                  </div>
@@ -418,7 +524,6 @@ export default function Dashboard({ user }: DashboardProps) {
              </div>
           </div>
           
-          {/* CATEGORY DROPDOWN */}
           <div className="relative min-w-[120px]" ref={catRef}>
              <button type="button" onClick={() => setIsCatOpen(!isCatOpen)} className="w-full flex items-center justify-between gap-2 bg-slate-800/50 border border-slate-700/50 hover:border-indigo-500/50 px-3 py-2 rounded-lg text-sm text-slate-300 transition"><span className="truncate">{category}</span><ChevronDown size={14} className={`transition-transform ${isCatOpen ? 'rotate-180' : ''}`} /></button>
              {isCatOpen && (
@@ -427,14 +532,10 @@ export default function Dashboard({ user }: DashboardProps) {
                </motion.div>
              )}
           </div>
-          
           <button type="submit" className="bg-indigo-600 w-10 h-10 rounded-lg hover:bg-indigo-500 transition flex items-center justify-center text-white shadow-lg active:scale-95 ml-auto"><Plus size={20} /></button>
         </form>
-        {/* QUICK TEMPLATES */}
         <div className="flex gap-2 mt-3 overflow-x-auto pb-2 scrollbar-hide">
-          {QUICK_TEMPLATES.map(tmpl => (
-            <button key={tmpl} onClick={() => setInput(tmpl + ' ')} className="text-xs font-medium bg-slate-800/50 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-300 px-3 py-1.5 rounded-lg border border-slate-700/50 hover:border-indigo-500/30 transition whitespace-nowrap">+ {tmpl}</button>
-          ))}
+          {QUICK_TEMPLATES.map(tmpl => (<button key={tmpl} onClick={() => setInput(tmpl + ' ')} className="text-xs font-medium bg-slate-800/50 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-300 px-3 py-1.5 rounded-lg border border-slate-700/50 hover:border-indigo-500/30 transition whitespace-nowrap">+ {tmpl}</button>))}
         </div>
       </motion.div>
 
@@ -449,7 +550,7 @@ export default function Dashboard({ user }: DashboardProps) {
                 {sections.overdue ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Overdue ({groupedTodos.list.overdue.length})
               </button>
               <AnimatePresence>
-                {sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</motion.div>}
+                {sections.overdue && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.overdue.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</motion.div>}
               </AnimatePresence>
             </div>
           )}
@@ -459,7 +560,7 @@ export default function Dashboard({ user }: DashboardProps) {
                {sections.soon ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Due Soon ({groupedTodos.list.soon.length})
             </button>
             <AnimatePresence>
-              {sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</motion.div>}
+              {sections.soon && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.soon.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</motion.div>}
             </AnimatePresence>
           </div>
 
@@ -468,7 +569,7 @@ export default function Dashboard({ user }: DashboardProps) {
                {sections.later ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Later ({groupedTodos.list.later.length})
             </button>
             <AnimatePresence>
-              {sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</motion.div>}
+              {sections.later && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.later.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</motion.div>}
             </AnimatePresence>
           </div>
 
@@ -478,7 +579,7 @@ export default function Dashboard({ user }: DashboardProps) {
                  {sections.completed ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed ({groupedTodos.list.completed.length})
               </button>
               <AnimatePresence>
-                {sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</motion.div>}
+                {sections.completed && <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">{groupedTodos.list.completed.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</motion.div>}
               </AnimatePresence>
             </div>
           )}
@@ -488,25 +589,21 @@ export default function Dashboard({ user }: DashboardProps) {
       {/* --- KANBAN VIEW 📋 --- */}
       {viewMode === 'board' && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 overflow-x-auto pb-4">
-           {/* Column 1: Todo */}
            <div className="space-y-3">
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Circle size={14} /> To Do ({groupedTodos.board.todo.length})</h3>
-              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.todo.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</div>
+              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.todo.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</div>
            </div>
-           {/* Column 2: In Progress */}
            <div className="space-y-3">
               <h3 className="text-sm font-bold text-sky-400 uppercase tracking-wider flex items-center gap-2"><Activity size={14} /> In Progress ({groupedTodos.board.inProgress.length})</h3>
-              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.inProgress.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</div>
+              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.inProgress.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</div>
            </div>
-           {/* Column 3: Waiting */}
            <div className="space-y-3">
               <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2"><Hourglass size={14} /> Waiting ({groupedTodos.board.waiting.length})</h3>
-              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</div>
+              <div className="space-y-2 min-h-[200px]">{groupedTodos.board.waiting.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</div>
            </div>
-           {/* Column 4: Done */}
            <div className="space-y-3">
               <h3 className="text-sm font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2"><CheckCircle2 size={14} /> Done ({groupedTodos.board.done.length})</h3>
-              <div className="space-y-2 min-h-[200px] opacity-70">{groupedTodos.board.done.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} />)}</div>
+              <div className="space-y-2 min-h-[200px] opacity-70">{groupedTodos.board.done.map(t => <TaskItem key={t.id} todo={t} now={now} editingId={editingId} editForm={editForm} setEditForm={setEditForm} saveEdit={saveEdit} startEditing={startEditing} deleteTodo={deleteTodo} toggleComplete={toggleComplete} privacyMode={privacyMode} setEditingId={setEditingId} updateStatus={updateStatus} schedule={schedule} />)}</div>
            </div>
         </div>
       )}
