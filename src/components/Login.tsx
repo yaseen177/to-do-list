@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile } from "firebase/auth";
+import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile, confirmPasswordReset } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { auth, googleProvider, db } from "../firebase";
-import { LogIn, UserPlus, KeyRound, Mail, Lock, Phone, User, Check, AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
+import { LogIn, UserPlus, KeyRound, Mail, Lock, Phone, User, Check, AlertCircle, ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
 
-type AuthMode = 'signin' | 'signup' | 'forgot';
+type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset';
 
 // 🌍 API Types
 interface CountryData {
@@ -26,6 +26,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [oobCode, setOobCode] = useState(''); // Store the reset code from URL
 
   // 🌍 Country API State
   const [countries, setCountries] = useState<FormattedCountry[]>([]);
@@ -42,6 +43,18 @@ export default function Login() {
   // Password Rules
   const [pwdValid, setPwdValid] = useState({ length: false, upper: false, lower: false, number: false, special: false });
 
+  // --- 1. DETECT RESET LINK FROM EMAIL ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const modeParam = params.get('mode');
+    const codeParam = params.get('oobCode');
+
+    if (modeParam === 'resetPassword' && codeParam) {
+      setMode('reset');
+      setOobCode(codeParam);
+    }
+  }, []);
+
   // --- FETCH FLAGS API ---
   useEffect(() => {
     const fetchCountries = async () => {
@@ -50,30 +63,26 @@ export default function Login() {
         const data: CountryData[] = await response.json();
         
         const formatted = data
-          .filter(c => c.idd.root) // Remove countries with no dial code
+          .filter(c => c.idd.root) 
           .map(c => ({
             code: c.cca2,
             name: c.name.common,
-            flag: c.flags.svg, // Using SVG for crisp flags
+            flag: c.flags.svg, 
             dial_code: c.idd.root + (c.idd.suffixes ? c.idd.suffixes[0] : '')
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
-        // 🇬🇧 Priority Sorting (UK, US, IE, AU, IN first)
         const priorityCodes = ['GB', 'US', 'IE', 'AU', 'IN'];
         const topCountries = priorityCodes.map(code => formatted.find(c => c.code === code)).filter(Boolean) as FormattedCountry[];
         const otherCountries = formatted.filter(c => !priorityCodes.includes(c.code));
 
         setCountries([...topCountries, ...otherCountries]);
       } catch (err) {
-        console.error("Failed to fetch flags", err);
-        // Fallback if API fails
         setCountries([{ name: 'United Kingdom', dial_code: '+44', flag: 'https://flagcdn.com/gb.svg', code: 'GB' }]);
       } finally {
         setLoadingCountries(false);
       }
     };
-
     fetchCountries();
   }, []);
 
@@ -125,15 +134,32 @@ export default function Login() {
         setLoading(false);
         return;
       }
+      else if (mode === 'reset') {
+        if (!isPasswordValid) throw new Error("Password does not meet security requirements.");
+        if (password !== confirmPassword) throw new Error("Passwords do not match.");
+        
+        await confirmPasswordReset(auth, oobCode, password);
+        setSuccess('Password reset successfully! Redirecting to login...');
+        setTimeout(() => {
+            setMode('signin');
+            setSuccess('');
+            setPassword('');
+            setConfirmPassword('');
+            // Clear URL params so refresh doesn't trigger reset again
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }, 3000);
+      }
     } catch (err: any) {
       let msg = err.message;
       if (msg.includes('auth/invalid-email')) msg = "Invalid email address.";
       if (msg.includes('auth/user-not-found')) msg = "No account found with this email.";
       if (msg.includes('auth/wrong-password')) msg = "Incorrect password.";
       if (msg.includes('auth/email-already-in-use')) msg = "Email already in use. Please sign in.";
+      if (msg.includes('auth/invalid-action-code')) msg = "This reset link has expired or already been used.";
       setError(msg);
     } finally {
-      if (mode !== 'forgot') setLoading(false);
+      if (mode !== 'forgot' && mode !== 'reset') setLoading(false);
+      if (mode === 'reset' && error) setLoading(false); // Stop loading on reset error
     }
   };
 
@@ -148,13 +174,17 @@ export default function Login() {
             {mode === 'signin' && <LogIn size={32} />}
             {mode === 'signup' && <UserPlus size={32} />}
             {mode === 'forgot' && <KeyRound size={32} />}
+            {mode === 'reset' && <ShieldCheck size={32} />}
           </div>
           
           <h1 className="text-2xl font-bold mb-2">
-            {mode === 'signin' ? 'Welcome Back' : mode === 'signup' ? 'Create Account' : 'Reset Password'}
+            {mode === 'signin' ? 'Welcome Back' : mode === 'signup' ? 'Create Account' : mode === 'forgot' ? 'Reset Password' : 'Set New Password'}
           </h1>
           <p className="text-slate-400 mb-6 text-sm">
-            {mode === 'signin' ? 'Sign in to access your clinical workspace.' : mode === 'signup' ? 'Join the platform for efficient management.' : 'Enter your email to receive a reset link.'}
+            {mode === 'signin' ? 'Sign in to access your clinical workspace.' : 
+             mode === 'signup' ? 'Join the platform for efficient management.' : 
+             mode === 'forgot' ? 'Enter your email to receive a reset link.' :
+             'Secure your account with a strong new password.'}
           </p>
 
           {error && <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm p-3 rounded-lg mb-4 flex items-center gap-2 text-left"><AlertCircle size={16} className="shrink-0" /> {error}</div>}
@@ -191,7 +221,6 @@ export default function Login() {
                           ))}
                         </select>
                         <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
-                           {/* Find selected flag */}
                            <img 
                              src={countries.find(c => c.dial_code === countryCode)?.flag} 
                              alt="flag" 
@@ -209,28 +238,31 @@ export default function Login() {
               </>
             )}
 
-            {/* --- COMMON FIELDS --- */}
-            <div className="relative">
-              <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input type="email" placeholder="Email Address" required value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-900/50 border border-slate-700/50 rounded-xl py-3 pl-10 pr-4 text-sm focus:border-indigo-500 outline-none transition-all placeholder-slate-600" />
-            </div>
+            {/* --- EMAIL (Not for Reset Mode) --- */}
+            {mode !== 'reset' && (
+              <div className="relative">
+                <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input type="email" placeholder="Email Address" required value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-900/50 border border-slate-700/50 rounded-xl py-3 pl-10 pr-4 text-sm focus:border-indigo-500 outline-none transition-all placeholder-slate-600" />
+              </div>
+            )}
 
+            {/* --- PASSWORD FIELDS (For Sign In, Sign Up, and Reset) --- */}
             {mode !== 'forgot' && (
               <div className="relative">
                 <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input 
                   type="password" 
-                  placeholder="Password" 
+                  placeholder={mode === 'reset' ? "New Password" : "Password"} 
                   required 
                   value={password} 
-                  onChange={e => { setPassword(e.target.value); if(mode==='signup') validatePassword(e.target.value); }} 
+                  onChange={e => { setPassword(e.target.value); if(mode==='signup' || mode === 'reset') validatePassword(e.target.value); }} 
                   className="w-full bg-slate-900/50 border border-slate-700/50 rounded-xl py-3 pl-10 pr-4 text-sm focus:border-indigo-500 outline-none transition-all placeholder-slate-600" 
                 />
               </div>
             )}
 
-            {/* --- PASSWORD RULES --- */}
-            {mode === 'signup' && (
+            {/* --- PASSWORD RULES & CONFIRM (For Sign Up and Reset) --- */}
+            {(mode === 'signup' || mode === 'reset') && (
               <>
                 <div className="text-[10px] grid grid-cols-2 gap-2 p-2 bg-slate-800/30 rounded-lg border border-white/5">
                   <span className={pwdValid.length ? "text-emerald-400" : "text-slate-500"}>• 10+ Characters</span>
@@ -247,12 +279,12 @@ export default function Login() {
             )}
 
             <button disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-              {loading ? 'Processing...' : mode === 'signin' ? 'Sign In' : mode === 'signup' ? 'Create Account' : 'Send Reset Link'}
+              {loading ? 'Processing...' : mode === 'signin' ? 'Sign In' : mode === 'signup' ? 'Create Account' : mode === 'reset' ? 'Update Password' : 'Send Reset Link'}
             </button>
           </form>
 
-          {/* --- GOOGLE SIGN IN --- */}
-          {mode !== 'forgot' && (
+          {/* --- GOOGLE SIGN IN (Only for Sign In/Up) --- */}
+          {(mode === 'signin' || mode === 'signup') && (
             <>
               <div className="my-6 flex items-center gap-4 opacity-50">
                 <div className="h-[1px] bg-slate-600 flex-1"></div>
@@ -276,7 +308,7 @@ export default function Login() {
             {mode === 'signup' && (
               <div>Already have an account? <button onClick={() => setMode('signin')} className="text-indigo-400 hover:text-indigo-300 font-medium">Sign in</button></div>
             )}
-            {mode === 'forgot' && (
+            {(mode === 'forgot' || mode === 'reset') && (
               <button onClick={() => setMode('signin')} className="flex items-center justify-center gap-2 hover:text-white transition mx-auto"><ArrowLeft size={14} /> Back to Sign In</button>
             )}
           </div>
