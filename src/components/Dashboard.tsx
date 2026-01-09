@@ -4,7 +4,7 @@ import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc
 import { signOut, updatePassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Trash2, Plus, Calendar as CalendarIcon, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, ChevronLeft, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Sun, Layers, Globe, Link2 } from 'lucide-react';
+import { CheckCircle2, Circle, Trash2, Plus, Calendar as CalendarIcon, Clock, Pencil, X, Check, Eye, EyeOff, Search, User as UserIcon, Target, ChevronDown, ChevronRight, ChevronLeft, Hourglass, AlertTriangle, LayoutTemplate, KanbanSquare, Flag, Activity, Settings, Save, Moon, RefreshCw, LogOut, Lock, ShieldCheck, Tag, Sun, Layers, Globe, Link2, AlertCircle } from 'lucide-react';
 import { format, isPast, parseISO, intervalToDuration, addHours, isBefore, differenceInCalendarWeeks, startOfWeek, subWeeks, addDays, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 
 // --- TYPES ---
@@ -115,10 +115,8 @@ const getTimeWaiting = (createdAt: any, now: Date) => {
 };
 
 // --- CALENDAR MANAGER MODAL ---
-const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, googleConnected, onConnectOutlook, onConnectGoogle, onDisconnect, calendars, toggleCalendar }: any) => {
+const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, outlookExpired, googleConnected, onConnectOutlook, onConnectGoogle, onDisconnect, calendars, toggleCalendar }: any) => {
   if (!isOpen) return null;
-
-  const outlookCalendars = calendars.filter((c: any) => c.source === 'outlook');
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -155,10 +153,16 @@ const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, googleConnect
           <div className="space-y-3 pt-4 border-t border-slate-800">
              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-white font-bold text-sm">
-                   <div className="w-4 h-4 bg-[#0078D4] text-white flex items-center justify-center text-[10px] rounded font-bold">O</div> Outlook Calendar
+                   {/* Outlook Logo SVG */}
+                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20px" height="20px"><path fill="#0078d4" d="M19,7h23c0.6,0,1,0.4,1,1v32c0,0.6-0.4,1-1,1H19c-0.6,0-1-0.4-1-1V8C18,7.4,18.4,7,19,7z"/><path fill="#2b5a8e" d="M12,13v22c0,0.6,0.4,1,1,1h6V12h-6C12.4,12,12,12.4,12,13z"/><path fill="#5ea9f5" d="M30,22h8v7h-8V22z"/><path fill="#ffffff" d="M36.5,23.5L34,26l-2.5-2.5l-1,1l2.5,2.5l-2.5,2.5l1,1l2.5-2.5l2.5,2.5l1-1l-2.5-2.5l2.5-2.5L36.5,23.5z"/><path fill="#ffffff" d="M16 16.5A2.5 2.5 0 1 0 16 21.5 2.5 2.5 0 1 0 16 16.5z"/></svg>
+                   Outlook Calendar
                 </div>
                 {outlookConnected ? (
-                  <button onClick={() => onDisconnect('outlook')} className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded hover:bg-rose-500/20">Disconnect</button>
+                  outlookExpired ? (
+                    <button onClick={onConnectOutlook} className="text-[10px] bg-amber-500/20 text-amber-400 px-3 py-1 rounded hover:bg-amber-500/30 flex items-center gap-1"><RefreshCw size={10}/> Refresh</button>
+                  ) : (
+                    <button onClick={() => onDisconnect('outlook')} className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded hover:bg-rose-500/20">Disconnect</button>
+                  )
                 ) : (
                   <button onClick={onConnectOutlook} className="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-500">Connect</button>
                 )}
@@ -166,16 +170,23 @@ const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, googleConnect
              
              {outlookConnected && (
                <div className="bg-slate-800/50 rounded-lg p-2 space-y-1">
-                  <div className="text-[10px] text-slate-500 uppercase font-bold px-2 mb-1">Select Calendars to View</div>
-                  {outlookCalendars.length === 0 && (
-                    <div className="text-xs text-slate-500 px-2 italic">Loading calendars...</div>
+                  {outlookExpired ? (
+                    <div className="flex items-center gap-2 p-2 text-amber-400 text-xs">
+                      <AlertCircle size={14}/>
+                      <span>Session expired. Please refresh.</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-[10px] text-slate-500 uppercase font-bold px-2 mb-1">Select Calendars to View</div>
+                      {calendars.filter((c:any) => c.source === 'outlook').length === 0 && <div className="text-xs text-slate-500 px-2 italic">Loading calendars...</div>}
+                      {calendars.filter((c:any) => c.source === 'outlook').map((cal: ExternalCalendar) => (
+                        <button key={cal.id} onClick={() => toggleCalendar(cal.id)} className="w-full flex items-center gap-2 p-2 hover:bg-white/5 rounded transition text-left">
+                          {cal.isActive ? <CheckCircle2 size={16} className="text-sky-400"/> : <Circle size={16} className="text-slate-600"/>}
+                          <span className={`text-xs ${cal.isActive ? 'text-white' : 'text-slate-500'}`}>{cal.name}</span>
+                        </button>
+                      ))}
+                    </>
                   )}
-                  {outlookCalendars.map((cal: ExternalCalendar) => (
-                    <button key={cal.id} onClick={() => toggleCalendar(cal.id)} className="w-full flex items-center gap-2 p-2 hover:bg-white/5 rounded transition text-left">
-                       {cal.isActive ? <CheckCircle2 size={16} className="text-sky-400"/> : <Circle size={16} className="text-slate-600"/>}
-                       <span className={`text-xs ${cal.isActive ? 'text-white' : 'text-slate-500'}`}>{cal.name}</span>
-                    </button>
-                  ))}
                </div>
              )}
           </div>
@@ -398,7 +409,8 @@ export default function Dashboard({ user }: DashboardProps) {
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
   const [outlookEvents, setOutlookEvents] = useState<CalendarEvent[]>([]);
   const [visibleCalendars, setVisibleCalendars] = useState({ tasks: true, google: true, outlook: true });
-  const [outlookConnected, setOutlookConnected] = useState(false); 
+  const [outlookConnected, setOutlookConnected] = useState(false);
+  const [outlookExpired, setOutlookExpired] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [externalCalendars, setExternalCalendars] = useState<ExternalCalendar[]>([]); // List of available calendars
 
@@ -510,6 +522,17 @@ export default function Dashboard({ user }: DashboardProps) {
     try {
       // 1. Fetch List of Calendars
       const calRes = await fetch("https://graph.microsoft.com/v1.0/me/calendars", { headers: { Authorization: `Bearer ${token}` } });
+      
+      if (!calRes.ok) {
+        if (calRes.status === 401) {
+          // Token expired, but user INTENDS to be connected
+          setOutlookConnected(true); 
+          setOutlookExpired(true);
+        }
+        return;
+      }
+
+      setOutlookExpired(false);
       const calData = await calRes.json();
       
       if (calData.value) {
@@ -556,16 +579,31 @@ export default function Dashboard({ user }: DashboardProps) {
 
   // Initial Load from Local Storage
   useEffect(() => {
+    // Google Load
     const gToken = localStorage.getItem(`google_token_${user.uid}`);
     if (gToken) loadGoogleEvents(gToken);
 
-    const oToken = localStorage.getItem(`outlook_token_${user.uid}`);
-    if (oToken) loadOutlookData(oToken);
+    // Outlook Load
+    // First, check if user INTENDS to be connected
+    const outlookIntent = localStorage.getItem(`outlook_connected_${user.uid}`);
+    
+    if (outlookIntent === 'true') {
+        const oToken = localStorage.getItem(`outlook_token_${user.uid}`);
+        if (oToken) {
+            loadOutlookData(oToken);
+        } else {
+            // No token, but intent exists -> Expired state
+            setOutlookConnected(true);
+            setOutlookExpired(true);
+        }
+    }
 
+    // Handle Redirect (Token received)
     if (window.location.hash.includes("access_token")) {
       const token = new URLSearchParams(window.location.hash.substring(1)).get("access_token");
       if (token) {
         localStorage.setItem(`outlook_token_${user.uid}`, token);
+        localStorage.setItem(`outlook_connected_${user.uid}`, 'true'); // Save INTENT
         window.history.replaceState(null, "", " ");
         loadOutlookData(token);
       }
@@ -615,9 +653,14 @@ export default function Dashboard({ user }: DashboardProps) {
       setGoogleEvents([]);
       setGoogleConnected(false);
     } else {
+      // Remove Token AND Intent
       localStorage.removeItem(`outlook_token_${user.uid}`);
+      localStorage.removeItem(`outlook_connected_${user.uid}`);
+      localStorage.removeItem(`outlook_calendars_${user.uid}`);
+      
       setOutlookEvents([]);
       setOutlookConnected(false);
+      setOutlookExpired(false);
       setExternalCalendars(prev => prev.filter(c => c.source !== 'outlook'));
     }
   };
@@ -737,6 +780,7 @@ export default function Dashboard({ user }: DashboardProps) {
         isOpen={isManagerOpen} 
         onClose={() => setIsManagerOpen(false)} 
         outlookConnected={outlookConnected} 
+        outlookExpired={outlookExpired}
         googleConnected={googleConnected} 
         onConnectOutlook={handleConnectOutlook}
         onConnectGoogle={handleConnectGoogle}
@@ -748,7 +792,7 @@ export default function Dashboard({ user }: DashboardProps) {
       {/* HEADER */}
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v9.0 (Calendar Mgr)</span></h1>
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-2">Clinical Admin <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">v9.1 (Final)</span></h1>
           <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
             <Clock size={14} /><span>{format(now, 'EEEE, d MMM - HH:mm')}</span>
           </div>
