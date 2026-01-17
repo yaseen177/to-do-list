@@ -70,6 +70,7 @@ const DEFAULT_WEEK: WeeklySchedule = {
   sunday: { start: '00:00', end: '00:00', isOff: true },
 };
 
+// DEFAULTS
 const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   { trigger: '/vf', expansion: 'Visual Fields Check' },
   { trigger: '/oct', expansion: 'OCT Scan Review' },
@@ -133,8 +134,8 @@ const getTimeRemaining = (dueDateStr: string, dueTimeStr: string | undefined, no
   if (duration.days) parts.push(`${duration.days}d`);
   if (duration.hours) parts.push(`${duration.hours}h`);
   const text = parts.slice(0, 2).join(' ') + ' left'; 
-  let color = 'text-indigo-500 dark:text-indigo-300';
-  if (!duration.months && !duration.days && duration.hours && duration.hours < 4) color = 'text-amber-500 dark:text-amber-400 font-bold';
+  let color = 'text-indigo-300';
+  if (!duration.months && !duration.days && duration.hours && duration.hours < 4) color = 'text-amber-400 font-bold';
   return { text, color };
 };
 
@@ -172,7 +173,6 @@ const handlePrintSelection = (tasks: Todo[], user: User) => {
         .status-badge { display: inline-block; padding: 2px 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 10px; text-transform: uppercase; }
         .notes { font-style: italic; color: #555; margin-top: 4px; font-size: 12px; display: block; }
         .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 10px; color: #888; border-top: 1px solid #eee; padding-top: 10px; }
-        /* Print Specifics */
         @media print {
           body { -webkit-print-color-adjust: exact; }
           .no-print { display: none; }
@@ -187,7 +187,6 @@ const handlePrintSelection = (tasks: Todo[], user: User) => {
           Date: ${format(new Date(), 'dd MMM yyyy HH:mm')}
         </div>
       </div>
-
       <table>
         <thead>
           <tr>
@@ -217,20 +216,102 @@ const handlePrintSelection = (tasks: Todo[], user: User) => {
           `).join('')}
         </tbody>
       </table>
-
       <div class="footer">
         Clinical Admin App | Printed for internal use only. Dispose of confidentially.
       </div>
-
       <script>
         window.onload = function() { window.print(); }
       </script>
     </body>
     </html>
   `;
-
   printWindow.document.write(htmlContent);
   printWindow.document.close();
+};
+
+// --- REFERRAL SAFETY NET MODAL ---
+const ReferralSafetyModal = ({ isOpen, onClose, onConfirm, methods }: any) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-slate-900 border-2 border-rose-500 w-full max-w-sm rounded-2xl shadow-2xl p-6 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-rose-500 animate-pulse"></div>
+        <div className="flex flex-col items-center text-center mb-6">
+          <div className="w-12 h-12 bg-rose-500/20 text-rose-500 rounded-full flex items-center justify-center mb-3">
+            <ShieldCheck size={28} />
+          </div>
+          <h2 className="text-xl font-bold text-white">Referral Safety Net</h2>
+          <p className="text-sm text-slate-400 mt-2">You are closing a Referral task. How was this referral sent?</p>
+        </div>
+        <div className="space-y-2">
+          {methods.map((method: ReferralMethod) => (
+            <button key={method.id} onClick={() => onConfirm(method.label)} className="w-full p-3 bg-slate-800 hover:bg-slate-700 text-left rounded-xl flex items-center justify-between group transition-colors">
+              <span className="text-slate-200 font-medium group-hover:text-white">{method.label}</span>
+              <Send size={16} className="text-slate-500 group-hover:text-indigo-400"/>
+            </button>
+          ))}
+        </div>
+        <button onClick={onClose} className="w-full mt-4 py-2 text-sm text-slate-500 hover:text-slate-300">Cancel (Don't Close)</button>
+      </motion.div>
+    </div>
+  );
+};
+
+// --- CALENDAR MANAGER MODAL ---
+const CalendarManagerModal = ({ isOpen, onClose, outlookConnected, outlookExpired, googleConnected, onConnectOutlook, onConnectGoogle, onDisconnect, calendars, toggleCalendar }: any) => {
+  if (!isOpen) return null;
+  const outlookCalendars = calendars.filter((c: any) => c.source === 'outlook');
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2"><Globe size={18} /> Manage Calendars</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
+        </div>
+        <div className="p-6 space-y-6 overflow-y-auto">
+          {/* GOOGLE */}
+          <div className="space-y-3">
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-white font-bold text-sm"><img src="https://www.google.com/favicon.ico" alt="G" className="w-4 h-4"/> Google Calendar</div>
+                {googleConnected ? (<button onClick={() => onDisconnect('google')} className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded hover:bg-rose-500/20">Disconnect</button>) : (<button onClick={onConnectGoogle} className="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-500">Connect</button>)}
+             </div>
+             {googleConnected && (
+               <div className="bg-slate-800/50 rounded-lg p-2 space-y-1">
+                  <div className="text-[10px] text-slate-500 uppercase font-bold px-2">Sub-Calendars</div>
+                  <div className="flex items-center gap-2 p-2 rounded cursor-not-allowed opacity-70"><CheckCircle2 size={14} className="text-emerald-500"/><span className="text-xs text-slate-300">Primary Calendar</span></div>
+               </div>
+             )}
+          </div>
+          {/* OUTLOOK */}
+          <div className="space-y-3 pt-4 border-t border-slate-800">
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-white font-bold text-sm">
+                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20px" height="20px"><path fill="#0078d4" d="M19,7h23c0.6,0,1,0.4,1,1v32c0,0.6-0.4,1-1,1H19c-0.6,0-1-0.4-1-1V8C18,7.4,18.4,7,19,7z"/><path fill="#2b5a8e" d="M12,13v22c0,0.6,0.4,1,1,1h6V12h-6C12.4,12,12,12.4,12,13z"/><path fill="#5ea9f5" d="M30,22h8v7h-8V22z"/><path fill="#ffffff" d="M36.5,23.5L34,26l-2.5-2.5l-1,1l2.5,2.5l-2.5,2.5l1,1l2.5-2.5l2.5,2.5l1-1l-2.5-2.5l2.5-2.5L36.5,23.5z"/><path fill="#ffffff" d="M16 16.5A2.5 2.5 0 1 0 16 21.5 2.5 2.5 0 1 0 16 16.5z"/></svg>Outlook Calendar
+                </div>
+                {outlookConnected ? (outlookExpired ? (<button onClick={onConnectOutlook} className="text-[10px] bg-amber-500/20 text-amber-400 px-3 py-1 rounded hover:bg-amber-500/30 flex items-center gap-1"><RefreshCw size={10}/> Refresh</button>) : (<button onClick={() => onDisconnect('outlook')} className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded hover:bg-rose-500/20">Disconnect</button>)) : (<button onClick={onConnectOutlook} className="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-500">Connect</button>)}
+             </div>
+             {outlookConnected && (
+               <div className="bg-slate-800/50 rounded-lg p-2 space-y-1">
+                  {outlookExpired ? (<div className="flex items-center gap-2 p-2 text-amber-400 text-xs"><AlertCircle size={14}/><span>Session expired. Please refresh.</span></div>) : (
+                    <>
+                      <div className="text-[10px] text-slate-500 uppercase font-bold px-2 mb-1">Select Calendars</div>
+                      {outlookCalendars.length === 0 && <div className="text-xs text-slate-500 px-2 italic">Loading...</div>}
+                      {outlookCalendars.map((cal: ExternalCalendar) => (
+                        <button key={cal.id} onClick={() => toggleCalendar(cal.id)} className="w-full flex items-center gap-2 p-2 hover:bg-white/5 rounded transition text-left">
+                          {cal.isActive ? <CheckCircle2 size={16} className="text-sky-400"/> : <Circle size={16} className="text-slate-600"/>}
+                          <span className={`text-xs ${cal.isActive ? 'text-white' : 'text-slate-500'}`}>{cal.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+               </div>
+             )}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
 };
 
 // --- SETTINGS MODAL ---
@@ -241,11 +322,14 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
   const [currentWeekSelection, setCurrentWeekSelection] = useState(0);
   const [localCategories, setLocalCategories] = useState<string[]>(categories || []);
   const [newCat, setNewCat] = useState('');
+  
+  // Automation
   const [localSlash, setLocalSlash] = useState<SlashCommand[]>(slashCommands || []);
   const [localReferral, setLocalReferral] = useState<ReferralMethod[]>(referralMethods || []);
   const [newTrig, setNewTrig] = useState('');
   const [newExp, setNewExp] = useState('');
   const [newRefMethod, setNewRefMethod] = useState('');
+
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -275,6 +359,7 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
   const handleRemoveCategory = (cat: string) => { setLocalCategories(localCategories.filter(c => c !== cat)); };
   const handleSaveCategories = async () => { setSaveStatus('saving'); try { await setDoc(doc(db, "users", user.uid), { categories: localCategories }, { merge: true }); setSaveStatus('success'); setTimeout(() => { setSaveStatus('idle'); onClose(); }, 1000); } catch (e) { console.error(e); setSaveStatus('idle'); } };
   const handleUpdatePassword = async () => { if (newPassword.length < 8) { setPasswordMsg({ text: 'Password too short', type: 'error' }); return; } if (newPassword !== confirmPassword) { setPasswordMsg({ text: 'Passwords do not match', type: 'error' }); return; } try { if (user) { await updatePassword(user, newPassword); setPasswordMsg({ text: 'Password updated!', type: 'success' }); setNewPassword(''); setConfirmPassword(''); } } catch (err: any) { setPasswordMsg({ text: err.message, type: 'error' }); } };
+
   const addSlash = () => { if(newTrig && newExp) { setLocalSlash([...localSlash, { trigger: newTrig.startsWith('/') ? newTrig : `/${newTrig}`, expansion: newExp }]); setNewTrig(''); setNewExp(''); } };
   const removeSlash = (t: string) => setLocalSlash(localSlash.filter(s => s.trigger !== t));
   const addRefMethod = () => { if(newRefMethod) { setLocalReferral([...localReferral, { id: newRefMethod.toLowerCase().replace(/\s/g, ''), label: newRefMethod }]); setNewRefMethod(''); } };
@@ -288,16 +373,95 @@ const SettingsModal = ({ isOpen, onClose, rotas, onSaveRotas, anchorDate, user, 
         <div className="flex border-b border-slate-800">{['rota', 'categories', 'automation', 'account'].map(tab => (<button key={tab} onClick={() => setActiveTab(tab as any)} className={`flex-1 py-3 text-sm font-medium transition capitalize ${activeTab === tab ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5' : 'text-slate-400 hover:bg-slate-800'}`}>{tab}</button>))}</div>
         
         {activeTab === 'rota' && (<><div className="bg-indigo-500/10 border-b border-indigo-500/20 p-4"><div className="flex items-center justify-between mb-2"><span className="text-sm font-bold text-indigo-200 flex items-center gap-2"><RefreshCw size={14}/> Sync Current Week</span><span className="text-xs text-indigo-300/60">{format(new Date(), 'd MMM')}</span></div><div className="flex items-center gap-3"><span className="text-sm text-slate-300">This week is:</span><div className="relative flex-1"><select value={currentWeekSelection} onChange={(e) => setCurrentWeekSelection(Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 appearance-none cursor-pointer focus:border-indigo-500 focus:outline-none">{localRotas.map((_, idx) => (<option key={idx} value={idx}>Week {idx + 1}</option>))}</select><ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" /></div></div></div><div className="flex items-center gap-2 px-6 pt-4 pb-2 overflow-x-auto scrollbar-hide">{localRotas.map((_, idx) => (<div key={idx} className="flex items-center"><button onClick={() => setActiveWeekIndex(idx)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${activeWeekIndex === idx ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Week {idx + 1}</button>{localRotas.length > 1 && activeWeekIndex === idx && <button onClick={() => removeWeek(idx)} className="ml-1 p-1 text-rose-400 hover:bg-rose-500/10 rounded-full"><X size={12} /></button>}</div>))}<button onClick={addWeek} className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:border-indigo-500 transition"><Plus size={14} /></button></div><div className="p-6 space-y-4 overflow-y-auto flex-1">{['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => { const dayData = (localRotas[activeWeekIndex] || DEFAULT_WEEK)[day] || DEFAULT_WEEK.monday; return (<div key={day} className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50"><div className="w-24 capitalize text-sm font-medium text-slate-200">{day}</div>{!dayData.isOff ? (<><input type="time" value={dayData.start} onChange={(e) => handleRotaChange(day, 'start', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" /><span className="text-slate-500">-</span><input type="time" value={dayData.end} onChange={(e) => handleRotaChange(day, 'end', e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white" /></>) : <span className="flex-1 text-center text-xs text-slate-500 uppercase tracking-wider font-bold">Day Off</span>}<button onClick={() => handleRotaChange(day, 'isOff', !dayData.isOff)} className={`px-3 py-1 rounded text-xs font-bold transition ${dayData.isOff ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}>{dayData.isOff ? 'OFF' : 'ON'}</button></div>); })}</div><div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button><button onClick={handleSaveRota} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2"><Save size={16} /> Save Rota</button></div></>)}
+        
         {activeTab === 'categories' && (<><div className="flex-1 flex flex-col min-h-0"><div className="p-6 space-y-6 overflow-y-auto flex-1"><div className="flex gap-2"><input value={newCat} onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()} placeholder="New Category Name..." className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:border-indigo-500 outline-none"/><button onClick={handleAddCategory} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg"><Plus size={20}/></button></div><div className="space-y-2">{localCategories.map(cat => (<div key={cat} className="flex items-center justify-between p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg group"><span className="text-slate-200 text-sm font-medium">{cat}</span><button onClick={() => handleRemoveCategory(cat)} className="text-slate-500 hover:text-rose-400 transition opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button></div>))}{localCategories.length === 0 && <div className="text-center text-slate-500 text-sm py-4">No categories set.</div>}</div></div></div><div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Close</button><button onClick={handleSaveCategories} disabled={saveStatus !== 'idle'} className={`px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${saveStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>{saveStatus === 'saving' ? <>Saving...</> : saveStatus === 'success' ? <><Check size={16}/> Saved!</> : <><Save size={16}/> Save Categories</>}</button></div></>)}
+
         {activeTab === 'automation' && (<><div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-6 space-y-8"><div><h3 className="text-indigo-400 font-bold flex items-center gap-2 mb-3 text-sm uppercase tracking-wider"><Command size={16}/> Slash Commands</h3><div className="flex gap-2 mb-3"><input value={newTrig} onChange={(e) => setNewTrig(e.target.value)} placeholder="/vf" className="w-20 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"/><input value={newExp} onChange={(e) => setNewExp(e.target.value)} placeholder="Visual Fields Check" className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"/><button onClick={addSlash} className="bg-indigo-600 text-white px-3 rounded-lg"><Plus size={16}/></button></div><div className="space-y-1">{localSlash.map(s => (<div key={s.trigger} className="flex justify-between items-center p-2 bg-slate-800/50 rounded-lg border border-slate-700/50"><div className="text-xs text-slate-300"><span className="font-mono text-indigo-400 font-bold">{s.trigger}</span> &rarr; {s.expansion}</div><button onClick={() => removeSlash(s.trigger)} className="text-slate-500 hover:text-rose-400"><X size={14}/></button></div>))}</div></div><div><h3 className="text-rose-400 font-bold flex items-center gap-2 mb-3 text-sm uppercase tracking-wider"><ShieldCheck size={16}/> Referral Safety Net</h3><p className="text-xs text-slate-500 mb-3">When you complete a task in category "Referral", you will be asked to confirm one of these delivery methods.</p><div className="flex gap-2 mb-3"><input value={newRefMethod} onChange={(e) => setNewRefMethod(e.target.value)} placeholder="New Method (e.g. Courier)" className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"/><button onClick={addRefMethod} className="bg-indigo-600 text-white px-3 rounded-lg"><Plus size={16}/></button></div><div className="space-y-1">{localReferral.map(r => (<div key={r.id} className="flex justify-between items-center p-2 bg-slate-800/50 rounded-lg border border-slate-700/50"><span className="text-xs text-slate-300">{r.label}</span><button onClick={() => removeRefMethod(r.id)} className="text-slate-500 hover:text-rose-400"><X size={14}/></button></div>))}</div></div></div><div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-end gap-3 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button><button onClick={saveAutomation} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium">Save Changes</button></div></>)}
+
         {activeTab === 'account' && (<div className="p-6 space-y-6 overflow-y-auto flex-1"><div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50"><h3 className="text-white font-bold flex items-center gap-2 mb-4"><Lock size={18} className="text-indigo-400"/> Authentication</h3>{isGoogleAuth ? (<div className="flex flex-col items-center justify-center py-4 space-y-3"><div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg"><img src="https://www.google.com/favicon.ico" alt="Google" className="w-6 h-6" /></div><div className="text-center"><p className="text-white font-medium">Connected with Google</p><p className="text-xs text-slate-400 mt-1 max-w-[200px]">Password & Security are managed via your Google Account.</p></div></div>) : (<div className="space-y-4"><label className="text-xs text-slate-400 uppercase font-bold tracking-wider">Change Password</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="New Password" /><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 outline-none" placeholder="Confirm Password" />{passwordMsg.text && <div className={`text-xs p-2 rounded ${passwordMsg.type === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{passwordMsg.text}</div>}<button onClick={handleUpdatePassword} className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition">Update Password</button></div>)}</div><div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30"><h3 className="text-slate-300 font-bold flex items-center gap-2 mb-2"><ShieldCheck size={18}/> Data Privacy</h3><p className="text-xs text-slate-500 leading-relaxed">Your data is stored securely in compliance with UK GDPR standards.</p></div></div>)}
       </motion.div>
     </div>
   );
 };
 
+// --- CALENDAR VIEW COMPONENT ---
+const CalendarView = ({ todos, currentDate, setCurrentDate, onEdit, googleEvents, outlookEvents, visibleCalendars, setVisibleCalendars, setIsManagerOpen }: any) => {
+  const monthStart = startOfMonth(currentDate);
+  const monthEnd = endOfMonth(monthStart);
+  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const allDays = eachDayOfInterval({ start: startDate, end: endDate });
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+
+  return (
+    <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl overflow-hidden shadow-xl">
+      <div className="flex items-center justify-between p-4 bg-slate-800/80 border-b border-slate-700">
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-bold text-white">{format(currentDate, "MMMM yyyy")}</h2>
+          <div className="flex bg-slate-700 rounded-lg p-0.5">
+            <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-1 hover:bg-white/10 rounded"><ChevronLeft size={20} className="text-slate-300" /></button>
+            <button onClick={() => setCurrentDate(new Date())} className="px-3 text-xs font-bold text-slate-300 hover:text-white">Today</button>
+            <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-1 hover:bg-white/10 rounded"><ChevronRight size={20} className="text-slate-300" /></button>
+          </div>
+        </div>
+        
+        <div className="flex gap-2">
+           <button onClick={() => setIsManagerOpen(true)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition"><Link2 size={14} /> Connect Accounts</button>
+           <div className="relative">
+             <button onClick={() => setIsFilterOpen(!isFilterOpen)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition"><Layers size={14} /> Filter</button>
+             {isFilterOpen && (
+               <div className="absolute top-full right-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 py-2">
+                  <button onClick={() => setVisibleCalendars({...visibleCalendars, tasks: !visibleCalendars.tasks})} className="w-full text-left px-4 py-2 hover:bg-white/5 flex items-center gap-2 text-xs text-white">{visibleCalendars.tasks ? <CheckCircle2 size={14} className="text-indigo-400"/> : <Circle size={14} className="text-slate-500"/>} Tasks (Local)</button>
+                  <button onClick={() => setVisibleCalendars({...visibleCalendars, google: !visibleCalendars.google})} className="w-full text-left px-4 py-2 hover:bg-white/5 flex items-center gap-2 text-xs text-white">{visibleCalendars.google ? <CheckCircle2 size={14} className="text-emerald-400"/> : <Circle size={14} className="text-slate-500"/>} Google Calendar</button>
+                  <button onClick={() => setVisibleCalendars({...visibleCalendars, outlook: !visibleCalendars.outlook})} className="w-full text-left px-4 py-2 hover:bg-white/5 flex items-center gap-2 text-xs text-white">{visibleCalendars.outlook ? <CheckCircle2 size={14} className="text-sky-400"/> : <Circle size={14} className="text-slate-500"/>} Outlook</button>
+               </div>
+             )}
+           </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-7 bg-slate-800/50 border-b border-slate-700 text-center py-2">{weekDays.map(d => <div key={d} className="text-xs font-bold text-slate-500 uppercase tracking-wider">{d}</div>)}</div>
+      <div className="grid grid-cols-7 auto-rows-fr bg-slate-900">
+        {allDays.map((dayItem) => {
+          const dayString = format(dayItem, 'yyyy-MM-dd');
+          const isCurrentMonth = isSameMonth(dayItem, monthStart);
+          const isToday = isSameDay(dayItem, new Date());
+          const daysTasks = visibleCalendars.tasks ? todos.filter((t: Todo) => t.dueDate === dayString) : [];
+          const daysGoogle = visibleCalendars.google ? googleEvents.filter((e: CalendarEvent) => isSameDay(e.start, dayItem)) : [];
+          const daysOutlook = visibleCalendars.outlook ? outlookEvents.filter((e: CalendarEvent) => isSameDay(e.start, dayItem)) : [];
+
+          return (
+            <div key={dayString} className={`min-h-[100px] p-2 border-b border-r border-slate-800/50 flex flex-col gap-1 transition-colors ${!isCurrentMonth ? 'bg-slate-900/30 text-slate-600' : 'bg-transparent text-slate-300'} ${isToday ? 'bg-indigo-500/5' : ''}`}>
+              <div className="flex justify-between items-start"><span className={`text-sm font-medium ${isToday ? 'bg-indigo-600 text-white w-6 h-6 flex items-center justify-center rounded-full shadow-lg shadow-indigo-500/50' : ''}`}>{format(dayItem, 'd')}</span></div>
+              <div className="flex-1 flex flex-col gap-1 mt-1 overflow-y-auto max-h-[80px] scrollbar-hide">
+                {daysTasks.map((t: Todo) => (<button key={t.id} onClick={() => onEdit(t)} className={`text-left text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 hover:opacity-80 transition active:scale-95 ${t.completed ? 'opacity-40 line-through bg-slate-800 border-slate-600 text-slate-500' : t.priority === 'high' ? 'bg-rose-500/10 border-rose-500 text-rose-300' : t.priority === 'medium' ? 'bg-amber-500/10 border-amber-500 text-amber-300' : 'bg-blue-500/10 border-blue-500 text-blue-300'}`}>{t.patientName ? <span className="font-bold mr-1">{t.patientName}</span> : null}{t.text}</button>))}
+                {daysGoogle.map((e: CalendarEvent) => (<div key={e.id} className="text-left text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 bg-emerald-500/10 border-emerald-500 text-emerald-300" title="Google Calendar Event">{e.title}</div>))}
+                {daysOutlook.map((e: CalendarEvent) => (<div key={e.id} className="text-left text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 bg-sky-500/10 border-sky-500 text-sky-300" title={`Outlook: ${e.calendarName || 'Event'}`}>{e.title}</div>))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// --- EDIT TASK MODAL ---
+const EditTaskModal = ({ isOpen, onClose, todo, onSave, onDelete, categories, rotas, anchorDate }: any) => {
+  const [form, setForm] = useState(todo || {});
+  useEffect(() => { if (todo) setForm(todo); }, [todo]);
+  if (!isOpen || !todo) return null;
+  const handleSave = () => { onSave(todo.id, form); onClose(); };
+  const setSmartTime = (type: 'today' | 'tomorrow') => { const date = type === 'today' ? new Date() : addDays(new Date(), 1); const dateStr = format(date, 'yyyy-MM-dd'); const timeStr = getShiftEndTime(dateStr, rotas, anchorDate); setForm({ ...form, dueDate: dateStr, dueTime: timeStr }); };
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col"><div className="p-5 border-b border-slate-800 flex justify-between items-center"><h2 className="text-lg font-bold text-white flex items-center gap-2"><Pencil size={18} /> Edit Task</h2><button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button></div><div className="p-6 space-y-5"><div className="flex gap-4"><div className="flex-1 space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Category</label><div className="relative"><select value={form.category} onChange={e => setForm({...form, category: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm appearance-none outline-none focus:border-indigo-500">{categories.map((c: string) => <option key={c} value={c}>{c}</option>)}</select><ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" /></div></div><div className="flex-1 space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Priority</label><div className="flex bg-slate-800 rounded-lg p-1 border border-slate-700">{['low', 'medium', 'high'].map(p => (<button key={p} onClick={() => setForm({...form, priority: p})} className={`flex-1 py-1.5 text-xs font-bold uppercase rounded transition ${form.priority === p ? (p==='high'?'bg-rose-500/20 text-rose-400':p==='medium'?'bg-amber-500/20 text-amber-400':'bg-blue-500/20 text-blue-400') : 'text-slate-500 hover:text-slate-300'}`}>{p}</button>))}</div></div></div><div className="space-y-3"><div className="relative"><UserIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><input value={form.patientName} onChange={e => setForm({...form, patientName: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white placeholder-slate-600 focus:border-indigo-500 outline-none" placeholder="Patient Name" /></div><textarea value={form.text} onChange={e => setForm({...form, text: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white placeholder-slate-600 focus:border-indigo-500 outline-none h-20 resize-none" placeholder="Task description..." /><div className="relative"><StickyNote size={16} className="absolute left-3 top-3 text-slate-500" /><textarea value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-slate-600 focus:border-indigo-500 outline-none h-20 resize-none" placeholder="Additional Notes..." /></div></div><div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Deadline</label><div className="flex gap-2"><input type="date" value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})} className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500" /><input type="time" value={form.dueTime} onChange={e => setForm({...form, dueTime: e.target.value})} className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500" /><button onClick={() => setSmartTime('today')} className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-amber-400 hover:bg-white/5" title="End of Today"><Moon size={18}/></button><button onClick={() => setSmartTime('tomorrow')} className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-sky-400 hover:bg-white/5" title="End of Tomorrow"><Sun size={18}/></button></div></div></div><div className="p-4 bg-slate-800/50 border-t border-slate-800 flex justify-between items-center"><button onClick={() => { if(confirm('Delete this task?')) { onDelete(todo.id); onClose(); } }} className="text-rose-400 hover:bg-rose-500/10 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2"><Trash2 size={16}/> Delete</button><div className="flex gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button><button onClick={handleSave} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium">Save Changes</button></div></div></motion.div>
+    </div>
+  );
+};
+
 // --- TASK ITEM COMPONENT ---
-const TaskItem = ({ todo, now, onEdit, deleteTodo, toggleComplete, privacyMode, updateStatus, selected, onSelect, showCheckbox }: any) => {
+const TaskItem = ({ todo, now, onEdit, deleteTodo, toggleComplete, privacyMode, updateStatus, selected, onSelect }: any) => {
   const remaining = getTimeRemaining(todo.dueDate, todo.dueTime, now);
   const waiting = getTimeWaiting(todo.createdAt, now);
   const createdStr = todo.createdAt?.seconds ? format(new Date(todo.createdAt.seconds * 1000), 'd MMM') : 'Now';
@@ -362,6 +526,36 @@ const TaskItem = ({ todo, now, onEdit, deleteTodo, toggleComplete, privacyMode, 
         <button onClick={() => deleteTodo(todo.id)} className="text-slate-500 hover:text-rose-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 hover:bg-white/5 rounded"><Trash2 size={16} /></button>
       </div>
     </motion.div>
+  );
+};
+
+// --- TOAST NOTIFICATION COMPONENT ---
+const ToastContainer = ({ toasts }: { toasts: ToastMsg[] }) => {
+  return (
+    <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 w-full max-w-sm px-4">
+      <AnimatePresence>
+        {toasts.map(toast => (
+          <motion.div 
+            key={toast.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className={`flex items-center justify-between p-3 rounded-xl shadow-lg border ${
+              toast.type === 'success' ? 'bg-emerald-500 border-emerald-400 text-white' : 
+              toast.type === 'error' ? 'bg-rose-500 border-rose-400 text-white' : 
+              'bg-slate-800 border-slate-700 text-white'
+            }`}
+          >
+            <span className="text-sm font-medium">{toast.message}</span>
+            {toast.undoAction && (
+              <button onClick={toast.undoAction} className="flex items-center gap-1 text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded transition">
+                <Undo2 size={12} /> Undo
+              </button>
+            )}
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
   );
 };
 
@@ -712,6 +906,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const handleDrop = async (e: React.DragEvent, newStatus: Todo['status']) => { 
     const taskId = e.dataTransfer.getData("taskId"); 
     if (taskId) { 
+      // Safety check for drag and drop to 'done'
       if (newStatus === 'done') {
          const task = todos.find(t => t.id === taskId);
          if (task && (task.category === 'Referral' || task.category === 'Referrals')) {
